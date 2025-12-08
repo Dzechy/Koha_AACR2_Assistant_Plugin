@@ -1,5 +1,5 @@
 [% INCLUDE 'doc-head-open.inc' %]
-<title>Koha: Auto-Punctuation Plugin: Configuration</title>
+<title>Koha: AACR2 MARC21 LCC Intellisense Configuration</title>
 [% INCLUDE 'doc-head-close.inc' %]
 [% INCLUDE 'calendar.inc' %]
 <style>
@@ -92,13 +92,13 @@
 <div id="breadcrumbs">
     <a href="/cgi-bin/koha/mainpage.pl">Home</a> ›
     <a href="/cgi-bin/koha/plugins/plugins-home.pl">Plugins</a> ›
-    <a href="#" class="active">Auto-Punctuation Plugin Configuration</a>
+    <a href="#" class="active">AACR2 MARC21 LCC Intellisense Configuration</a>
 </div>
 <div class="main container-fluid">
     <div class="row">
         <div class="col-sm-10 col-sm-push-2">
             <main>
-                <h1>Auto-Punctuation Plugin Configuration</h1>
+                <h1>AACR2 MARC21 LCC Intellisense Configuration</h1>
 
                 [% IF settings.last_updated %]
                 <div class="alert alert-success">
@@ -115,17 +115,16 @@
                         <legend>Basic Settings</legend>
                         <ol class="rows">
                             <li>
-                                <label for="enabled">Enable Auto-Punctuation:</label>
+                                <label for="enabled">Enable AACR2 Intellisense:</label>
                                 <input type="checkbox" name="enabled" id="enabled" value="1" [% IF settings.enabled %]checked[% END %]/>
-                                <span class="hint">Check to enable automatic punctuation in cataloging forms</span>
+                                <span class="hint">Check to enable AACR2 punctuation and LCC intellisense on cataloging forms</span>
                             </li>
                             <li>
-                                <label for="default_standard">Default Cataloging Standard:</label>
+                                <label for="default_standard">Cataloging Standard:</label>
                                 <select name="default_standard" id="default_standard" class="form-control" style="width: auto; display: inline-block;">
-                                    <option value="AACR2" [% IF settings.default_standard == 'AACR2' %]selected[% END %]>AACR2</option>
-                                    <option value="RDA" [% IF settings.default_standard == 'RDA' %]selected[% END %]>RDA</option>
+                                    <option value="AACR2" selected>AACR2</option>
                                 </select>
-                                <span class="hint">Choose the default cataloging standard for punctuation rules</span>
+                                <span class="hint">AACR2 is enforced for MARC21/LCC intellisense.</span>
                             </li>
                             <li>
                                 <label for="debug_mode">Debug Mode:</label>
@@ -138,9 +137,9 @@
                         <legend>Interactive Training Guide</legend>
                         <ol class="rows">
                             <li>
-                                <label for="enable_guide">Enable Interactive Guide:</label>
+                                <label for="enable_guide">Enable Interactive AACR2 Guide:</label>
                                 <input type="checkbox" name="enable_guide" id="enable_guide" value="1" [% IF settings.enable_guide %]checked[% END %]/>
-                                <span class="hint">Enable step-by-step AACR2/RDA guide for training</span>
+                                <span class="hint">Enable step-by-step AACR2 guide for training and LCC context</span>
                             </li>
                             <li>
                                 <label for="guide_users">Exclude Users from Guide:</label>
@@ -248,6 +247,36 @@
                         </ol>
                     </fieldset>
                     <fieldset class="configuration-section">
+                        <legend>AACR2 Guardrails & Live Validation</legend>
+                        <ol class="rows">
+                            <li>
+                                <label for="enforce_aacr2_guardrails">Enforce AACR2 Guardrails:</label>
+                                <input type="checkbox" name="enforce_aacr2_guardrails" id="enforce_aacr2_guardrails" value="1" [% IF settings.enforce_aacr2_guardrails %]checked[% END %]/>
+                                <span class="hint">Lock AACR2-only punctuation and MARC21 placement with hard guards and warnings.</span>
+                            </li>
+                            <li>
+                                <label for="enable_live_validation">Enable Live Validation:</label>
+                                <input type="checkbox" name="enable_live_validation" id="enable_live_validation" value="1" [% IF settings.enable_live_validation %]checked[% END %]/>
+                                <span class="hint">Highlight violations in real time as catalogers type.</span>
+                            </li>
+                            <li>
+                                <label for="block_save_on_error">Block Save on Errors:</label>
+                                <input type="checkbox" name="block_save_on_error" id="block_save_on_error" value="1" [% IF settings.block_save_on_error %]checked[% END %]/>
+                                <span class="hint">Disable record save when AACR2 guardrail violations remain.</span>
+                            </li>
+                            <li>
+                                <label for="required_fields">Required AACR2 Fields:</label>
+                                <input type="text" name="required_fields" id="required_fields" value="[% settings.required_fields || '100a,245a,260c,300a,050a' %]" class="form-control"/>
+                                <span class="hint">Comma-separated MARC subfields to enforce (e.g., 100a,245a,260c,300a,050a).</span>
+                            </li>
+                            <li>
+                                <label for="excluded_tags">Excluded Tags (Optional):</label>
+                                <input type="text" name="excluded_tags" id="excluded_tags" value="[% settings.excluded_tags %]" class="form-control"/>
+                                <span class="hint">Comma-separated MARC tags/subfields to skip from automation (e.g., 590a,9XX).</span>
+                            </li>
+                        </ol>
+                    </fieldset>
+                    <fieldset class="configuration-section">
                         <legend>AI Classification</legend>
                         <ol class="rows">
                             <li>
@@ -273,8 +302,8 @@
                                     <ul>
                                         <li>Analyzes title, subtitle, and summary fields</li>
                                         <li>Suggests subject headings (650/651 fields)</li>
-                                        <li>Proposes Library of Congress and Dewey classifications</li>
-                                        <li>Generates call number suggestions</li>
+                                        <li>Proposes Library of Congress classmarks (no DDC)</li>
+                                        <li>Generates full LCC call number suggestions</li>
                                         <li>Only fills empty fields - won't overwrite existing data</li>
                                     </ul>
                                 </div>

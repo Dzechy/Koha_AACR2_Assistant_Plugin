@@ -1,12 +1,9 @@
 /**
- * Auto-Insert Punctuation for Koha Bibliographic Fields
- * =====================================================
- * This plugin automatically inserts punctuation marks in MARC fields according to
- * cataloging standards (AACR2, RDA), with interactive training, custom rules,
- * internship mode, and AI-driven classification.
- *
- * Part of the Koha Auto-Punctuation Plugin v1.2.5
- * Updated to apply exclusions to both superlibrarian and regular users
+ * AACR2 MARC21 LCC Intellisense for Koha
+ * ======================================
+ * AACR2-only punctuation, MARC21/LCC intellisense, floating assistant UI, and
+ * AI-driven subject + call number guidance crafted for Koha cataloging forms.
+ * Authored by Duke Chijimaka Jonathan.
  */
 $(document).ready(function() {
     // Get configuration with fallback
@@ -21,11 +18,19 @@ $(document).ready(function() {
         internshipMode: true,
         internshipUsers: '',
         internshipExclusionList: '',
+        enforceAacr2Guardrails: true,
+        enableLiveValidation: true,
+        blockSaveOnError: true,
+        requiredFields: '100a,245a,260c,300a,050a',
+        excludedTags: '',
         llmApiProvider: 'OpenAI',
         llmApiKey: '',
         last_updated: '2025-06-20 12:56:22',
         pluginPath: '/cgi-bin/koha/plugins/run.pl?class=Koha::Plugin::Cataloging::AutoPunctuation'
     };
+
+    // Enforce AACR2-only behavior regardless of stored preference
+    CONFIG.catalogingStandard = 'AACR2';
 
     // Warn if fallback is used
     if (!window.AutoPunctuationSettings) {
@@ -102,6 +107,112 @@ $(document).ready(function() {
         }
     }
 
+    // Floating assistant styles
+    const assistantStyles = `
+        #aacr2-intellisense { position: fixed; bottom: 20px; right: 20px; width: 360px; background: #0c223f; color: #fff; border-radius: 6px; box-shadow: 0 8px 20px rgba(0,0,0,0.35); z-index: 9999; overflow: hidden; }
+        #aacr2-intellisense header { padding: 10px 12px; background: #17345f; display: flex; justify-content: space-between; align-items: center; }
+        #aacr2-intellisense h4 { margin: 0; font-size: 14px; font-weight: 700; }
+        #aacr2-intellisense .body { padding: 10px 12px; background: #102742; }
+        #aacr2-intellisense .meta { font-size: 11px; color: #cdd8ec; margin-bottom: 8px; }
+        #aacr2-intellisense .results { background: #0a1b30; border: 1px solid #264a8f; border-radius: 4px; padding: 8px; min-height: 80px; font-size: 12px; color: #e8f0ff; }
+        #aacr2-intellisense button { margin-top: 8px; }
+        #aacr2-intellisense.collapsed .body { display: none; }
+        #aacr2-intellisense .tags { margin-top: 6px; font-size: 11px; color: #cdd8ec; }
+        .aacr2-violation { border-color: #d9534f !important; box-shadow: 0 0 6px rgba(217,83,79,0.6) !important; }
+        .aacr2-violation-hint { color: #f7d7d7; font-size: 11px; margin-top: 4px; }
+        .aacr2-ghost { margin-top: 6px; padding: 8px; background: #0e2c51; border: 1px dashed #4aa3ff; border-radius: 4px; color: #e8f0ff; font-size: 12px; position: relative; }
+        .aacr2-ghost .ghost-actions { margin-top: 6px; display: flex; gap: 6px; }
+        .aacr2-ghost .ghost-pill { display: inline-block; background: rgba(255,255,255,0.12); color: #b8d7ff; padding: 4px 6px; border-radius: 12px; margin-right: 6px; font-size: 11px; }
+        .aacr2-ghost button.btn-link { color: #b8d7ff; padding: 0; border: none; background: transparent; text-decoration: underline; }
+    `;
+    $('head').append(`<style>${assistantStyles}</style>`);
+
+    // Toast helper
+    function toast(type, message) {
+        if (window.toastr && typeof window.toastr[type] === 'function') {
+            toastr.options = toastr.options || {};
+            toastr.options.positionClass = toastr.options.positionClass || 'toast-bottom-right';
+            toastr[type](message);
+            return;
+        }
+        const $toast = $(`
+            <div class="alert alert-${type === 'error' ? 'danger' : type}" style="position: fixed; bottom: 20px; right: 20px; z-index: 10000; min-width: 220px;">${message}</div>
+        `).appendTo('body');
+        setTimeout(() => $toast.fadeOut(() => $toast.remove()), 4000);
+    }
+
+    // Ghost suggestion cache and state
+    const ghostCache = new Map();
+    const ghostRequestsInFlight = new Set();
+    const ghostTargets = {
+        '050a': { label: 'LCC call number', type: 'call_number' },
+        '090a': { label: 'Local call number', type: 'call_number' },
+        '650a': { label: 'LCSH topical subject', type: 'subject_topical' },
+        '651a': { label: 'LCSH geographic subject', type: 'subject_geographic' }
+    };
+
+    const requiredFields = (CONFIG.requiredFields || '100a,245a,260c,300a,050a')
+        .split(',')
+        .map(f => f.trim())
+        .filter(Boolean);
+    const excludedFields = (CONFIG.excludedTags || '')
+        .split(',')
+        .map(f => f.trim())
+        .filter(Boolean);
+    const violationState = new Map();
+
+    function isExcluded(tag, subfield) {
+        const key = `${tag}${subfield}`;
+        return excludedFields.some(entry => {
+            if (!entry) return false;
+            if (/\d{3}[a-z]/i.test(entry)) {
+                return entry.toLowerCase() === key.toLowerCase();
+            }
+            if (/\d{3}/.test(entry)) {
+                return entry.replace(/\D/g, '') === tag;
+            }
+            return false;
+        });
+    }
+
+    function setViolation(fieldKey, message, $element) {
+        if (!$element) return;
+        violationState.set(fieldKey, message);
+        $element.addClass('aacr2-violation').attr('title', message);
+        updateGuardrailStatus();
+    }
+
+    function clearViolation(fieldKey, $element) {
+        violationState.delete(fieldKey);
+        if ($element) {
+            $element.removeClass('aacr2-violation').removeAttr('title');
+        }
+        updateGuardrailStatus();
+    }
+
+    function updateGuardrailStatus() {
+        const missingRequired = requiredFields.filter(code => !fieldHasValue(code));
+        const totalViolations = violationState.size + missingRequired.length;
+        const statusText = totalViolations === 0
+            ? 'AACR2 guardrails satisfied'
+            : `${totalViolations} AACR2 guardrail issue${totalViolations === 1 ? '' : 's'} (${missingRequired.length} required fields missing)`;
+        $('#aacr2-guardrail-status').text(statusText);
+        $('#aacr2-live-meta').text(`Guardrail status: ${statusText}`);
+        if (CONFIG.blockSaveOnError && CONFIG.enforceAacr2Guardrails) {
+            const shouldDisable = totalViolations > 0;
+            $('form[name="f"] input[type="submit"], #cat_addbiblio input[type="submit"]').prop('disabled', shouldDisable);
+        }
+    }
+
+    function fieldHasValue(code) {
+        const tag = code.substring(0, 3);
+        const sub = code.substring(3, 4);
+        const selector = `#subfield${tag}${sub}, #tag_${tag}_subfield_${sub}, input[name^="field_${tag}${sub}"], textarea[name^="field_${tag}${sub}"]`;
+        const $field = $(selector).first();
+        if (!$field.length) return false;
+        return Boolean($field.val() && $field.val().trim());
+    }
+
     // Check if server settings are newer
     function isServerSettingsNewer() {
         const sessionLastUpdated = sessionStorage.getItem('punctuationHelperLastUpdated');
@@ -125,11 +236,8 @@ $(document).ready(function() {
             CONFIG.enabled = savedEnabled === 'true';
             debug(`Loaded session preference for enabled: ${CONFIG.enabled}`);
         }
-        const savedStandard = sessionStorage.getItem('punctuationHelperStandard');
-        if (savedStandard) {
-            CONFIG.catalogingStandard = savedStandard;
-            debug(`Loaded session preference for standard: ${CONFIG.catalogingStandard}`);
-        }
+        CONFIG.catalogingStandard = 'AACR2';
+        debug('Cataloging standard locked to AACR2 for intellisense focus');
         // Load exclusions from session storage
         const savedGuideExclusions = sessionStorage.getItem('punctuationGuideExclusions');
         const savedInternshipExclusions = sessionStorage.getItem('punctuationInternshipExclusions');
@@ -207,56 +315,6 @@ $(document).ready(function() {
             '250a': { prefix: '', suffix: '.' },
             '020a': { prefix: '', suffix: ' ' },
             '022a': { prefix: '', suffix: ' ' }
-        },
-        'RDA': {
-            '245a': { prefix: '', suffix: '.' },
-            '245b': { prefix: ' : ', suffix: '' },
-            '245c': { prefix: ' / ', suffix: '' },
-            '245n': { prefix: '. ', suffix: '' },
-            '245p': { prefix: ', ', suffix: '' },
-            '264a': { prefix: '', suffix: ' : ' },
-            '264b': { prefix: '', suffix: '' },
-            '264c': { prefix: '', suffix: '' },
-            '336a': { prefix: '', suffix: '' },
-            '337a': { prefix: '', suffix: '' },
-            '338a': { prefix: '', suffix: '' },
-            '300a': { prefix: '', suffix: ' : ' },
-            '300b': { prefix: '', suffix: ' ; ' },
-            '300c': { prefix: '', suffix: '' },
-            '490a': { prefix: '', suffix: ' ; ' },
-            '500a': { prefix: '', suffix: '' },
-            '502a': { prefix: '', suffix: '' },
-            '504a': { prefix: '', suffix: '' },
-            '505a': { prefix: '', suffix: '' },
-            '520a': { prefix: '', suffix: '' },
-            '650a': { prefix: '', suffix: ' -- ' },
-            '650x': { prefix: '', suffix: ' -- ' },
-            '650y': { prefix: '', suffix: ' -- ' },
-            '650z': { prefix: '', suffix: '' },
-            '651a': { prefix: '', suffix: ' -- ' },
-            '651x': { prefix: '', suffix: ' -- ' },
-            '651y': { prefix: '', suffix: ' -- ' },
-            '651z': { prefix: '', suffix: '' },
-            '100a': { prefix: '', suffix: '' },
-            '100d': { prefix: ', ', suffix: '' },
-            '100e': { prefix: ', ', suffix: '' },
-            '700a': { prefix: '', suffix: '' },
-            '700d': { prefix: ', ', suffix: '' },
-            '700e': { prefix: ', ', suffix: '' },
-            '110a': { prefix: '', suffix: '' },
-            '110b': { prefix: '. ', suffix: '' },
-            '710a': { prefix: '', suffix: '' },
-            '710b': { prefix: '. ', suffix: '' },
-            '111a': { prefix: '', suffix: '' },
-            '111c': { prefix: ' (', suffix: ')' },
-            '111d': { prefix: ' (', suffix: ')' },
-            '711a': { prefix: '', suffix: '' },
-            '711c': { prefix: ' (', suffix: ')' },
-            '711d': { prefix: ' (', suffix: ')' },
-            '240a': { prefix: '', suffix: '' },
-            '250a': { prefix: '', suffix: '' },
-            '020a': { prefix: '', suffix: ' ' },
-            '022a': { prefix: '', suffix: ' ' }
         }
     };
 
@@ -264,8 +322,7 @@ $(document).ready(function() {
     let punctuationRules = {};
     try {
         punctuationRules = {
-            AACR2: { ...defaultPunctuationRules.AACR2, ...(customRules.AACR2 || {}) },
-            RDA: { ...defaultPunctuationRules.RDA, ...(customRules.RDA || {}) }
+            AACR2: { ...defaultPunctuationRules.AACR2, ...(customRules.AACR2 || {}) }
         };
     } catch (e) {
         debug(`Error merging rules: ${e}. Using default rules.`);
@@ -354,19 +411,24 @@ $(document).ready(function() {
 
     // Handle field focus
     function handleFieldFocus(event) {
-        if (!CONFIG.enabled) return;
+        if (!CONFIG.enabled && !(CONFIG.enableLiveValidation || CONFIG.enforceAacr2Guardrails)) return;
         const inputId = $(this).attr('id');
         const parsedField = parseFieldId(inputId);
         if (!parsedField) return;
         const { tag, subfield } = parsedField;
+        if (isExcluded(tag, subfield)) {
+            debug(`Field ${tag}${subfield} is excluded from automation`);
+            return;
+        }
         const fieldKey = tag + subfield;
         const rules = getRules();
-        if (!rules[fieldKey]) {
-            debug(`No rules for field ${fieldKey}, skipping`);
+        const hasRules = Boolean(rules[fieldKey]);
+        if (!hasRules && !ghostTargets[fieldKey]) {
+            debug(`No rules or ghost targets for field ${fieldKey}, skipping`);
             return;
         }
         originalValues[inputId] = $(this).val();
-        if ($(this).val() === '' && rules[fieldKey].prefix) {
+        if (hasRules && $(this).val() === '' && rules[fieldKey].prefix) {
             debug(`Adding prefix "${rules[fieldKey].prefix}" to ${fieldKey}`);
             $(this).val(rules[fieldKey].prefix);
             if (this.setSelectionRange) {
@@ -376,16 +438,27 @@ $(document).ready(function() {
                 setTimeout(() => $(this).removeAttr('aria-live'), 1000);
             }
         }
+        maybeShowGhostSuggestion(fieldKey, $(this));
     }
 
     // Handle field blur
     function handleFieldBlur(event) {
-        if (!CONFIG.enabled) return;
+        if (!CONFIG.enabled && !(CONFIG.enforceAacr2Guardrails || CONFIG.enableLiveValidation)) return;
         const inputId = $(this).attr('id');
         const parsedField = parseFieldId(inputId);
         if (!parsedField) return;
         const { tag, subfield } = parsedField;
+        if (isExcluded(tag, subfield)) {
+            debug(`Field ${tag}${subfield} is excluded from automation`);
+            return;
+        }
         const fieldKey = tag + subfield;
+        const rules = getRules();
+        const hasRules = Boolean(rules[fieldKey]);
+        if (!hasRules) {
+            debug(`No punctuation rules for ${fieldKey} on blur; skipping punctuation enforcement`);
+            return;
+        }
         const currentValue = $(this).val().trim();
         if (currentValue === '') {
             debug(`Field ${fieldKey} is empty, skipping suffix`);
@@ -415,11 +488,175 @@ $(document).ready(function() {
                 }
             }
         }
+        validateField($(this), fieldKey, suffix, tag, subfield);
+    }
+
+    function validateField($element, fieldKey, suffix, tag, subfield) {
+        if (!(CONFIG.enableLiveValidation || CONFIG.enforceAacr2Guardrails)) {
+            return;
+        }
+        const value = ($element.val() || '').trim();
+        if (!value) {
+            clearViolation(fieldKey, $element);
+            updateGuardrailStatus();
+            return;
+        }
+        const issues = [];
+        if (suffix && shouldHaveTerminalPunctuation(tag, subfield)) {
+            const normalizedSuffix = suffix.trim();
+            if (normalizedSuffix && !value.endsWith(normalizedSuffix)) {
+                issues.push(`Missing AACR2 terminal punctuation (${normalizedSuffix}) for ${fieldKey}`);
+            }
+        }
+        if (/\s{2,}/.test(value)) {
+            issues.push('AACR2 discourages double spaces; please tighten spacing');
+        }
+        if (issues.length) {
+            setViolation(fieldKey, issues[0], $element);
+        } else {
+            clearViolation(fieldKey, $element);
+        }
+    }
+
+    function isGhostCandidate(fieldKey) {
+        return CONFIG.enabled && CONFIG.llmApiKey && ghostTargets[fieldKey] && !isInternExcluded;
+    }
+
+    function maybeShowGhostSuggestion(fieldKey, $element) {
+        if (!isGhostCandidate(fieldKey)) return;
+        if (ghostRequestsInFlight.has(fieldKey)) return;
+
+        if (ghostCache.has(fieldKey)) {
+            renderGhostSuggestion(fieldKey, $element, ghostCache.get(fieldKey));
+            return;
+        }
+
+        ghostRequestsInFlight.add(fieldKey);
+        toast('info', `Requesting AACR2 ghost guidance for ${ghostTargets[fieldKey].label}...`);
+        fetchGhostSuggestion(fieldKey, $element)
+            .catch(err => {
+                debug(`Ghost suggestion failed for ${fieldKey}: ${err.message}`);
+                toast('error', `Ghost suggestion unavailable for ${ghostTargets[fieldKey].label}.`);
+            })
+            .finally(() => ghostRequestsInFlight.delete(fieldKey));
+    }
+
+    function extractGhostValues(result, fieldKey) {
+        const target = ghostTargets[fieldKey];
+        if (!target) return [];
+        const values = [];
+        if (target.type === 'call_number') {
+            if (result.call_number) values.push(result.call_number);
+            if (result.lcc && !values.includes(result.lcc)) values.push(result.lcc);
+        } else if (target.type && target.type.startsWith('subject')) {
+            if (Array.isArray(result.subjects)) {
+                result.subjects.forEach(subject => {
+                    if (typeof subject === 'string') {
+                        values.push(subject);
+                        return;
+                    }
+                    const isGeo = subject.type === 'geographic';
+                    const isTopical = subject.type === 'topical';
+                    if (target.type === 'subject_geographic' && !isGeo) return;
+                    if (target.type === 'subject_topical' && !isTopical) return;
+                    const main = subject.main || subject.heading || '';
+                    if (!main) return;
+                    const subdivisions = Array.isArray(subject.subdivisions) ? subject.subdivisions.filter(Boolean) : [];
+                    const assembled = `${main}${subdivisions.length ? ' -- ' + subdivisions.join(' -- ') : ''}`;
+                    values.push(assembled);
+                });
+            }
+        }
+        return values.filter(Boolean);
+    }
+
+    async function fetchGhostSuggestion(fieldKey, $element) {
+        const payload = collectAACR2Data();
+        if (Object.keys(payload).length === 0) {
+            toast('warning', 'Add AACR2-required descriptive fields before asking for ghost guidance.');
+            return;
+        }
+        if (!CONFIG.pluginPath) {
+            toast('error', 'Plugin path missing; cannot request ghost guidance.');
+            return;
+        }
+        payload.intent = 'ghost_suggestion';
+        payload.focus_field = fieldKey;
+        payload.target = ghostTargets[fieldKey].type;
+        const response = await fetch(`${CONFIG.pluginPath}&method=api_classify`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const result = await response.json();
+        if (result.error) throw new Error(result.error);
+        const values = extractGhostValues(result, fieldKey);
+        if (!values.length) {
+            toast('warning', `No AACR2-ready suggestion returned for ${ghostTargets[fieldKey].label}.`);
+            return;
+        }
+        ghostCache.set(fieldKey, values);
+        renderGhostSuggestion(fieldKey, $element, values);
+        toast('success', `${ghostTargets[fieldKey].label} ghost ready. Accept or refresh to use.`);
+    }
+
+    function renderGhostSuggestion(fieldKey, $element, values) {
+        if (!values || !values.length) return;
+        const label = ghostTargets[fieldKey]?.label || fieldKey;
+        const formattedValues = values.map(v => `<li>${formatGhostValue(fieldKey, v)}</li>`).join('');
+        const $ghost = $(`
+            <div class="aacr2-ghost" data-field="${fieldKey}">
+                <div><span class="ghost-pill">AI ghost</span> AACR2-ready ${label} suggestion</div>
+                <ul style="margin: 6px 0 0 18px; padding: 0;">${formattedValues}</ul>
+                <div class="ghost-actions">
+                    <button class="btn btn-xs btn-success ghost-accept"><i class="fa fa-check"></i> Accept</button>
+                    <button class="btn btn-xs btn-default ghost-refresh"><i class="fa fa-refresh"></i> Refresh</button>
+                    <button class="btn btn-xs btn-link ghost-dismiss">Dismiss</button>
+                </div>
+            </div>
+        `);
+        $element.next('.aacr2-ghost').remove();
+        $ghost.insertAfter($element);
+
+        $ghost.find('.ghost-accept').off('click').on('click', function() {
+            applyGhostValue(fieldKey, values[0], $element);
+        });
+        $ghost.find('.ghost-refresh').off('click').on('click', function() {
+            ghostCache.delete(fieldKey);
+            $ghost.remove();
+            maybeShowGhostSuggestion(fieldKey, $element);
+        });
+        $ghost.find('.ghost-dismiss').off('click').on('click', function() {
+            $ghost.remove();
+            toast('info', `${label} ghost dismissed.`);
+        });
+    }
+
+    function formatGhostValue(fieldKey, value) {
+        const rules = getRules();
+        const suffix = rules[fieldKey] ? rules[fieldKey].suffix : '';
+        if (suffix) {
+            const trimmedSuffix = (suffix || '').trim();
+            if (!value.endsWith(suffix) && (!trimmedSuffix || !value.endsWith(trimmedSuffix))) {
+                return `${value}${suffix}`;
+            }
+        }
+        return value;
+    }
+
+    function applyGhostValue(fieldKey, value, $element) {
+        if (!value) return;
+        const formatted = formatGhostValue(fieldKey, value);
+        $element.val(formatted);
+        toast('success', `${ghostTargets[fieldKey]?.label || fieldKey} applied from ghost suggestion.`);
+        $element.next('.aacr2-ghost').remove();
+        handleFieldBlur.call($element[0]);
     }
 
     // Adjust consecutive subfields
     function handleConsecutiveSubfields() {
-        if (!CONFIG.enabled) return;
+        if (!CONFIG.enabled && !(CONFIG.enforceAacr2Guardrails || CONFIG.enableLiveValidation)) return;
         debug('Checking and adjusting consecutive subfields');
         const title245a = $('#subfield245a, #tag_245_subfield_a, [id*="245"][id*="a"]');
         if (title245a.length) {
@@ -455,23 +692,11 @@ $(document).ready(function() {
                 }
             }
         }
-        if (CONFIG.catalogingStandard === 'RDA') {
-            debug('Applying RDA-specific adjustments');
-            const date264c = $('#subfield264c, #tag_264_subfield_c, [id*="264"][id*="c"]');
-            if (date264c.length) {
-                let dateValue = date264c.val();
-                if (dateValue && dateValue.endsWith('.')) {
-                    dateValue = dateValue.substring(0, dateValue.length - 1);
-                    date264c.val(dateValue);
-                    debug('Removed terminal period from 264$c per RDA rules');
-                }
-            }
-        }
     }
 
     // Apply event handlers
     function applyHandlersToFields() {
-        if (!CONFIG.enabled) return;
+        if (!CONFIG.enabled && !(CONFIG.enforceAacr2Guardrails || CONFIG.enableLiveValidation)) return;
         debug('Applying event handlers to bibliographic fields');
         const fieldSelector = 'input[id^="tag_"], input[id^="subfield"], input[id*="tag"], input[id*="subfield"]';
         $(fieldSelector).off('focus.punctuation blur.punctuation');
@@ -482,7 +707,7 @@ $(document).ready(function() {
                 const { tag, subfield } = parsedField;
                 const fieldKey = tag + subfield;
                 const rules = getRules();
-                if (rules[fieldKey]) {
+                if ((rules[fieldKey] || ghostTargets[fieldKey]) && !isExcluded(tag, subfield)) {
                     debug(`Adding handlers to field ${fieldKey} (${inputId})`);
                     $(this).on('focus.punctuation', handleFieldFocus);
                     $(this).on('blur.punctuation', handleFieldBlur);
@@ -490,9 +715,16 @@ $(document).ready(function() {
             }
         });
         $(fieldSelector).on('change.punctuation', function() {
+            const parsed = parseFieldId($(this).attr('id'));
+            if (parsed && !isExcluded(parsed.tag, parsed.subfield)) {
+                const suffix = getPunctuation(parsed.tag, parsed.subfield, 'suffix');
+                validateField($(this), `${parsed.tag}${parsed.subfield}`, suffix, parsed.tag, parsed.subfield);
+            }
             setTimeout(handleConsecutiveSubfields, 100);
+            updateGuardrailStatus();
         });
         $('form[name="f"], #cat_addbiblio form').on('submit.punctuation', handleConsecutiveSubfields);
+        updateGuardrailStatus();
     }
 
     // Disable buttons for excluded users
@@ -526,208 +758,102 @@ $(document).ready(function() {
         }
     }
 
-    // Dynamic guide steps that adapt to current standard
+    // Dynamic guide steps focused on AACR2 + LCC
     function getGuideSteps() {
-        const standard = CONFIG.catalogingStandard;
-        const aacr2Steps = [
+        return [
             {
                 field: null,
                 tab: null,
-                description: 'Welcome to the AACR2 Cataloging Guide! Follow these steps to learn how to apply AACR2 punctuation rules across MARC fields. We\'ll cover areas 0-9.',
+                description: 'Welcome to the AACR2/LCC Intellisense guide. We focus on AACR2 punctuation, MARC21 placement, and Library of Congress call numbers for Koha catalogers.',
                 example: '',
                 action: 'none'
             },
             {
-                field: '245a',
-                tab: 'tab2XX_panel', // Ensure this matches the actual tab identifier in your HTML
-                description: 'Enter the title proper (245$a). AACR2 adds a period if no subsequent subfields (e.g., $b, $c) are present.',
-                example: 'The great Gatsby.',
+                field: '100a',
+                tab: 'tab1XX_panel',
+                description: 'Enter the main entry (100$a) with terminal period. This anchors name access for LCSH and LCC work.',
+                example: 'Fitzgerald, F. Scott,',
                 action: 'focus'
             },
             {
-                field: '245b',
+                field: '245a',
                 tab: 'tab2XX_panel',
-                description: 'Add a subtitle (245$b), preceded by a colon and space.',
-                example: ' : a novel',
+                description: 'Record the title proper (245$a). AACR2 adds a terminal period only when no $b/$c/$n/$p follow.',
+                example: 'The great Gatsby',
                 action: 'focus'
             },
             {
                 field: '245c',
                 tab: 'tab2XX_panel',
-                description: 'Enter the statement of responsibility (245$c), preceded by a slash and space, ending with a period.',
+                description: 'Statement of responsibility (245$c) begins with " / " and ends with a period. Supports authority control and LCC cutters.',
                 example: ' / F. Scott Fitzgerald.',
                 action: 'focus'
             },
             {
                 field: '250a',
                 tab: 'tab2XX_panel',
-                description: 'Enter the edition statement (250$a), ending with a period.',
+                description: 'Edition statement (250$a) ends with a period when final. Use AACR2 abbreviations as required.',
                 example: '2nd ed.',
                 action: 'focus'
             },
             {
                 field: '260a',
                 tab: 'tab2XX_panel',
-                description: 'Enter the place of publication (260$a), followed by a colon and space.',
+                description: 'Publication place (260$a) ends with a space-colon-space when $b or $c follow.',
                 example: 'New York :',
                 action: 'focus'
             },
             {
                 field: '260b',
                 tab: 'tab2XX_panel',
-                description: 'Enter the publisher (260$b), followed by a comma and space.',
+                description: 'Publisher (260$b) ends with comma-space when $c follows.',
                 example: 'Scribner,',
                 action: 'focus'
             },
             {
                 field: '260c',
                 tab: 'tab2XX_panel',
-                description: 'Enter the publication date (260$c), ending with a period.',
+                description: 'Date of publication (260$c) ends with a period. Reinforces chronological element for LCC call numbers.',
                 example: '1925.',
                 action: 'focus'
             },
             {
                 field: '300a',
                 tab: 'tab3XX_panel',
-                description: 'Enter the extent of item (300$a), followed by a colon if subsequent subfields exist, or a period if final.',
+                description: 'Extent (300$a) ends with colon-space when $b exists, otherwise with a period.',
                 example: '180 p. :',
                 action: 'focus'
             },
             {
-                field: '500a',
+                field: '520a',
                 tab: 'tab5XX_panel',
-                description: 'Enter a general note (500$a), ending with a period.',
-                example: 'Includes bibliographical references.',
+                description: 'Summary note (520$a) ends with a period; provides language for AI subject proposals.',
+                example: 'A portrait of the Jazz Age in decline.',
                 action: 'focus'
             },
             {
                 field: '650a',
                 tab: 'tab6XX_panel',
-                description: 'Enter a topical subject heading (650$a), followed by a double dash.',
-                example: 'American fiction --',
+                description: 'Topical subject (650$a) should end with double dashes for subdivisions. Aligns with LCSH and feeds call number cutters.',
+                example: 'Wealth --',
                 action: 'focus'
             },
             {
-                field: '100a',
-                tab: 'tab1XX_panel',
-                description: 'Enter the main entry personal name (100$a), ending with a period.',
-                example: 'Fitzgerald, F. Scott.',
-                action: 'focus'
-            }
-        ];
-
-        const rdaSteps = [
-            {
-                field: null,
-                tab: null,
-                description: 'Welcome to the RDA Cataloging Guide! Follow these steps to learn how to apply RDA punctuation rules across MARC fields. We\'ll cover areas 0-9.',
-                example: '',
-                action: 'none'
-            },
-            {
-                field: '245a',
-                tab: 'tab2XX_panel',
-                description: 'Enter the title proper (245$a). RDA adds a period if no subsequent subfields (e.g., $b, $c) are present.',
-                example: 'The great Gatsby.',
-                action: 'focus'
-            },
-            {
-                field: '245b',
-                tab: 'tab2XX_panel',
-                description: 'Add a subtitle (245$b), preceded by a colon and space.',
-                example: ' : a novel',
-                action: 'focus'
-            },
-            {
-                field: '245c',
-                tab: 'tab2XX_panel',
-                description: 'Enter the statement of responsibility (245$c), preceded by a slash and space, no terminal period in RDA.',
-                example: ' / F. Scott Fitzgerald',
-                action: 'focus'
-            },
-            {
-                field: '250a',
-                tab: 'tab2XX_panel',
-                description: 'Enter the edition statement (250$a), no terminal period in RDA.',
-                example: 'Second edition',
-                action: 'focus'
-            },
-            {
-                field: '264a',
-                tab: 'tab2XX_panel',
-                description: 'Enter the place of publication (264$a), followed by a colon and space.',
-                example: 'New York :',
-                action: 'focus'
-            },
-            {
-                field: '264b',
-                tab: 'tab2XX_panel',
-                description: 'Enter the publisher (264$b), followed by a comma and space.',
-                example: 'Scribner,',
-                action: 'focus'
-            },
-            {
-                field: '264c',
-                tab: 'tab2XX_panel',
-                description: 'Enter the publication date (264$c), no terminal period in RDA.',
-                example: '2015',
-                action: 'focus'
-            },
-            {
-                field: '336a',
-                tab: 'tab3XX_panel',
-                description: 'Enter the content type (336$a), no punctuation in RDA.',
-                example: 'text',
-                action: 'focus'
-            },
-            {
-                field: '337a',
-                tab: 'tab3XX_panel',
-                description: 'Enter the media type (337$a), no punctuation in RDA.',
-                example: 'unmediated',
-                action: 'focus'
-            },
-            {
-                field: '338a',
-                tab: 'tab3XX_panel',
-                description: 'Enter the carrier type (338$a), no punctuation in RDA.',
-                example: 'volume',
-                action: 'focus'
-            },
-            {
-                field: '300a',
-                tab: 'tab3XX_panel',
-                description: 'Enter the extent of item (300$a), followed by a colon if subsequent subfields exist, no period if final in RDA.',
-                example: '180 pages :',
-                action: 'focus'
-            },
-            {
-                field: '500a',
-                tab: 'tab5XX_panel',
-                description: 'Enter a general note (500$a), no terminal period in RDA.',
-                example: 'Includes bibliographical references',
-                action: 'focus'
-            },
-            {
-                field: '650a',
+                field: '651a',
                 tab: 'tab6XX_panel',
-                description: 'Enter a topical subject heading (650$a), followed by a double dash.',
-                example: 'American fiction --',
+                description: 'Geographic subject (651$a) follows the same punctuation pattern as 650s.',
+                example: 'Long Island (N.Y.) --',
                 action: 'focus'
             },
             {
-                field: '100a',
-                tab: 'tab1XX_panel',
-                description: 'Enter the main entry personal name (100$a), no terminal period in RDA.',
-                example: 'Fitzgerald, F. Scott',
+                field: '050a',
+                tab: 'tab0XX_panel',
+                description: 'Library of Congress Classification (050$a) call number suggestion lives here. Use the AI assistant to seed a classmark.',
+                example: 'PS3511.I9 G7',
                 action: 'focus'
             }
         ];
-
-        return standard === 'RDA' ? rdaSteps : aacr2Steps;
     }
-
-
     // Create guide dialog with proper close handlers
     function createGuideDialogHTML() {
         return `
@@ -920,13 +1046,7 @@ $(document).ready(function() {
             return;
         }
         debug(`Applying AI classification using ${CONFIG.llmApiProvider}`);
-        const fieldsToAnalyze = ['245a', '245b', '245c', '520a'];
-        const data = {};
-        fieldsToAnalyze.forEach(field => {
-            const selector = `#subfield${field}, #tag_${field.slice(0,3)}_subfield_${field.slice(3)}, [id*="${field.slice(0,3)}"][id*="${field.slice(3)}"]`;
-            const value = $(selector).val() || '';
-            if (value.trim()) data[field] = value.trim();
-        });
+        const data = collectAACR2Data();
         if (Object.keys(data).length === 0) {
             debug('No data to analyze for AI classification');
             return;
@@ -978,13 +1098,6 @@ $(document).ready(function() {
                     handleFieldBlur.call($field050a[0]);
                 }
             }
-            if (result.ddc && result.ddc.trim()) {
-                const $field082a = $(`#subfield082a, #tag_082_subfield_a, [id*="082"][id*="a"]`);
-                if ($field082a.length && !$field082a.val().trim()) {
-                    $field082a.val(result.ddc);
-                    handleFieldBlur.call($field082a[0]);
-                }
-            }
             if (result.call_number && result.call_number.trim()) {
                 const $field092a = $(`#subfield092a, #tag_092_subfield_a, [id*="092"][id*="a"]`);
                 if ($field092a.length && !$field092a.val().trim()) {
@@ -992,7 +1105,7 @@ $(document).ready(function() {
                     handleFieldBlur.call($field092a[0]);
                 }
             }
-            if (result.subjects || result.lcc || result.ddc || result.call_number) {
+            if (result.subjects || result.lcc || result.call_number) {
                 const $notification = $('<div class="alert alert-info alert-dismissible" style="margin: 10px 0;">')
                     .html(`
                         <button type="button" class="close" data-dismiss="alert">×</button>
@@ -1003,6 +1116,90 @@ $(document).ready(function() {
         } catch (error) {
             debug(`AI classification failed: ${error.message}`);
             console.error(error);
+        }
+    }
+
+    // Collect AACR2-required MARC21 data for AI prompts
+    function collectAACR2Data() {
+        const pairs = [
+            ['100', 'a'], ['110', 'a'], ['245', 'a'], ['245', 'b'], ['245', 'c'], ['250', 'a'],
+            ['260', 'a'], ['260', 'b'], ['260', 'c'], ['300', 'a'], ['300', 'b'], ['300', 'c'],
+            ['490', 'a'], ['520', 'a'], ['650', 'a'], ['651', 'a']
+        ];
+        const payload = {};
+        pairs.forEach(([tag, sub]) => {
+            const selector = `#subfield${tag}${sub}, #tag_${tag}_subfield_${sub}, input[name^="field_${tag}${sub}"], textarea[name^="field_${tag}${sub}"]`;
+            const value = $(selector).first().val();
+            if (value && value.trim()) {
+                payload[`${tag}${sub}`] = value.trim();
+            }
+        });
+        return payload;
+    }
+
+    // Floating AACR2/LCC window
+    function renderFloatingAssistant() {
+        if ($('#aacr2-intellisense').length) return;
+        const html = `
+            <div id="aacr2-intellisense" class="${CONFIG.enabled ? '' : 'collapsed'}">
+                <header>
+                    <h4>AACR2 · MARC21 · LCC</h4>
+                    <div>
+                        <small style="margin-right:10px; color:#cdd8ec;">by Duke Chijimaka Jonathan</small>
+                        <button id="aacr2-intellisense-toggle" class="btn btn-xs btn-default" title="Collapse/expand">
+                            <i class="fa fa-window-restore"></i>
+                        </button>
+                    </div>
+                </header>
+                <div class="body">
+                    <div class="meta">Focused on AACR2-required, MARC21 fields for original cataloging. Uses AI to propose LCSH + LCC call numbers.</div>
+                    <div id="aacr2-live-meta" class="meta">Guardrail status: pending...</div>
+                    <div id="aacr2-intellisense-results" class="results">Ready for guidance. Populate 1XX/245/250/260/300/5XX/6XX fields then click Generate.</div>
+                    <div class="tags">Endpoint: ${CONFIG.pluginPath ? 'Configured' : 'Missing plugin path'} · API: ${CONFIG.llmApiProvider || 'Not set'}</div>
+                    <button id="aacr2-intellisense-run" class="btn btn-primary btn-sm" ${CONFIG.llmApiKey ? '' : 'disabled'}>
+                        <i class="fa fa-magic"></i> Generate LCC + subjects
+                    </button>
+                </div>
+            </div>`;
+        $('body').append(html);
+        $('#aacr2-intellisense-toggle').on('click', function() {
+            $('#aacr2-intellisense').toggleClass('collapsed');
+        });
+        $('#aacr2-intellisense-run').on('click', runIntellisenseOverlay);
+    }
+
+    async function runIntellisenseOverlay() {
+        const $results = $('#aacr2-intellisense-results');
+        if (!CONFIG.llmApiKey) {
+            $results.text('No AI provider configured. Add credentials in plugin settings.');
+            return;
+        }
+        const payload = collectAACR2Data();
+        if (Object.keys(payload).length === 0) {
+            $results.text('Provide AACR2 core fields (100/245/250/260/300/520/650/651) before requesting guidance.');
+            return;
+        }
+        $results.text('Requesting AACR2/LCC guidance...');
+        try {
+            const response = await fetch(`${CONFIG.pluginPath}&method=api_classify`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const result = await response.json();
+            if (result.error) throw new Error(result.error);
+            const subjects = (result.subjects || []).map(s => `<li>${s}</li>`).join('');
+            const marcFields = (result.marc_fields || []).join(', ');
+            $results.html(`
+                <div><strong>LCC classmark:</strong> ${result.lcc || '—'}</div>
+                <div><strong>Call number:</strong> ${result.call_number || '—'}</div>
+                <div><strong>LCSH candidates:</strong><ul>${subjects || '<li>No subjects returned</li>'}</ul></div>
+                <div><strong>MARC focus:</strong> ${marcFields || 'Not specified'}</div>
+                <div><strong>Notes:</strong> ${result.notes || 'Review AACR2 punctuation before saving.'}</div>
+            `);
+        } catch (err) {
+            $results.text(`AACR2/LCC assistant error: ${err.message}`);
         }
     }
 
@@ -1017,10 +1214,9 @@ $(document).ready(function() {
                         <i class="fa ${CONFIG.enabled ? 'fa-toggle-on' : 'fa-toggle-off'}"></i>
                         Auto-Punctuation: ${CONFIG.enabled ? 'ON' : 'OFF'}
                     </button>
-                    <button id="punctuation-standard" class="btn btn-sm btn-default"
-                            title="Current cataloging standard: ${CONFIG.catalogingStandard}. Click to switch.">
-                        <i class="fa fa-book"></i> ${CONFIG.catalogingStandard}
-                    </button>
+                    <span class="btn btn-sm btn-default" title="AACR2-only focus with MARC21/LCC guidance">
+                        <i class="fa fa-book"></i> AACR2 · MARC21 · LCC
+                    </span>
                     <button id="punctuation-guide" class="btn btn-sm btn-info"
                             title="Start interactive training guide"
                             ${CONFIG.enableGuide && !isGuideExcluded ? '' : 'disabled'}>
@@ -1037,6 +1233,7 @@ $(document).ready(function() {
                     </button>
                 </div>
                 ${isInternExcluded ? '<div style="margin-top: 5px;"><small style="color: red; font-weight: bold;"><i class="fa fa-info-circle"></i> Auto-punctuation disabled for training purposes</small></div>' : ''}
+                <div id="aacr2-guardrail-status" class="aacr2-violation-hint" aria-live="polite">Guardrail status: pending...</div>
             </div>
         `;
     }
@@ -1057,12 +1254,12 @@ $(document).ready(function() {
                             <div class="row">
                                 <div class="col-md-6">
                                     <h5>About AutoPunctuation</h5>
-                                    <p>This tool automatically inserts punctuation into MARC fields per <strong id="activeStandard">${CONFIG.catalogingStandard}</strong> rules.</p>
+                                    <p>This tool automatically inserts punctuation into MARC fields per <strong id="activeStandard">AACR2</strong> rules with LCC-focused prompts.</p>
                                     <h5>Key Features</h5>
                                     <ul>
                                         <li><strong>Prefix/Suffix:</strong> Punctuation added on field entry/exit</li>
                                         <li><strong>Smart adjustments:</strong> Handles field relationships</li>
-                                        <li><strong>AACR2/RDA support:</strong> With custom rules</li>
+                                        <li><strong>AACR2 support:</strong> Customizable MARC21 punctuation set</li>
                                         <li><strong>Training guide:</strong> Step-by-step learning</li>
                                         <li><strong>AI-driven classification:</strong> Subjects and call numbers via ${CONFIG.llmApiProvider}</li>
                                     </ul>
@@ -1073,7 +1270,7 @@ $(document).ready(function() {
                                         <dt>Status:</dt>
                                         <dd><span class="label ${CONFIG.enabled ? 'label-success' : 'label-danger'}">${CONFIG.enabled ? 'Enabled' : 'Disabled'}</span></dd>
                                         <dt>Standard:</dt>
-                                        <dd id="activeStandardDisplay">${CONFIG.catalogingStandard}</dd>
+                                        <dd id="activeStandardDisplay">AACR2 (locked)</dd>
                                         <dt>Guide:</dt>
                                         <dd><span class="label ${CONFIG.enableGuide && !isGuideExcluded ? 'label-success' : 'label-default'}">${CONFIG.enableGuide && !isGuideExcluded ? 'Available' : 'Unavailable'}</span></dd>
                                         <dt>AI:</dt>
@@ -1082,8 +1279,7 @@ $(document).ready(function() {
                                     <h5>Quick Tips</h5>
                                     <ul>
                                         <li>Toggle auto-punctuation on/off as needed</li>
-                                        <li>Switch between AACR2 and RDA</li>
-                                        <li>Use guide for step-by-step training</li>
+                                        <li>Use the AACR2 guide for step-by-step training</li>
                                         <li>Manual edits override auto-punctuation</li>
                                     </ul>
                                 </div>
@@ -1149,24 +1345,6 @@ $(document).ready(function() {
             }
             debug(`Auto-punctuation toggled ${CONFIG.enabled ? 'ON' : 'OFF'}`);
         });
-        $('#punctuation-standard').off('click').on('click', function() {
-            if (isInternExcluded) return;
-            CONFIG.catalogingStandard = CONFIG.catalogingStandard === 'AACR2' ? 'RDA' : 'AACR2';
-            $(this).html(`<i class="fa fa-book"></i> ${CONFIG.catalogingStandard}`);
-            $(this).attr('title', `Current cataloging standard: ${CONFIG.catalogingStandard}. Click to switch.`);
-            sessionStorage.setItem('punctuationHelperStandard', CONFIG.catalogingStandard);
-            sessionStorage.setItem('punctuationHelperLastUpdated', CONFIG.last_updated);
-            if (CONFIG.enabled) {
-                applyHandlersToFields();
-            }
-            if ($('#punctuation-help-dialog').is(':visible')) {
-                $('#punctuation-help-dialog').remove();
-                $('body').append(createHelpDialogHTML());
-                bindHelpDialogEvents();
-                $('#punctuation-help-dialog').modal('show');
-            }
-            debug(`Cataloging standard changed to ${CONFIG.catalogingStandard}`);
-        });
         $('#punctuation-guide').off('click').on('click', function() {
             if (CONFIG.enableGuide && !isGuideExcluded) {
                 startGuide();
@@ -1205,7 +1383,7 @@ $(document).ready(function() {
 
     // Observe DOM
     function observeDOM() {
-        if (!CONFIG.enabled) return;
+        if (!CONFIG.enabled && !(CONFIG.enforceAacr2Guardrails || CONFIG.enableLiveValidation)) return;
         const targetNode = document.getElementById('cat_addbiblio') ||
                           document.querySelector('form[name="f"]') ||
                           document.body;
@@ -1249,10 +1427,13 @@ $(document).ready(function() {
 
     // Initialize
     function init() {
-        debug('Initializing Auto-Punctuation Plugin v1.2.5');
+        debug('Initializing AACR2 MARC21 LCC Intellisense v1.3.0');
         loadSessionPreferences();
         addUIElements();
+        renderFloatingAssistant();
         applyHandlersToFields();
+        updateGuardrailStatus();
+        setInterval(updateGuardrailStatus, 2000);
         observeDOM();
         debug(`Initialization complete. Enabled: ${CONFIG.enabled}, Standard: ${CONFIG.catalogingStandard}, User: ${loggedInUser}, SuperLibrarian: ${isSuperLibrarian}`);
     }
