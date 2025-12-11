@@ -411,7 +411,7 @@ $(document).ready(function() {
 
     // Handle field focus
     function handleFieldFocus(event) {
-        if (!CONFIG.enabled && !(CONFIG.enableLiveValidation || CONFIG.enforceAacr2Guardrails)) return;
+        if (!CONFIG.enabled) return;
         const inputId = $(this).attr('id');
         const parsedField = parseFieldId(inputId);
         if (!parsedField) return;
@@ -443,7 +443,8 @@ $(document).ready(function() {
 
     // Handle field blur
     function handleFieldBlur(event) {
-        if (!CONFIG.enabled && !(CONFIG.enforceAacr2Guardrails || CONFIG.enableLiveValidation)) return;
+        const guardrailsActive = CONFIG.enforceAacr2Guardrails || CONFIG.enableLiveValidation;
+        if (!CONFIG.enabled && !guardrailsActive) return;
         const inputId = $(this).attr('id');
         const parsedField = parseFieldId(inputId);
         if (!parsedField) return;
@@ -465,7 +466,7 @@ $(document).ready(function() {
             return;
         }
         const suffix = getPunctuation(tag, subfield, 'suffix');
-        if (suffix && !currentValue.endsWith(suffix)) {
+        if (CONFIG.enabled && suffix && !currentValue.endsWith(suffix)) {
             if (fieldKey === '300a' && suffix === ' : ' && !$('#subfield300b, #tag_300_subfield_b, [id*="300"][id*="b"]').length) {
                 debug(`300$a with no $b, using period instead of colon`);
                 let newValue = currentValue.trim();
