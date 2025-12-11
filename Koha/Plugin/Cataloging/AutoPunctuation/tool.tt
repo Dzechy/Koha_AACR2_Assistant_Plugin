@@ -1,5 +1,5 @@
 [% INCLUDE 'doc-head-open.inc' %]
-<title>Koha: Auto-Punctuation Plugin: Tool</title>
+<title>Koha: AACR2 MARC21 LCC Intellisense</title>
 [% INCLUDE 'doc-head-close.inc' %]
 [% INCLUDE 'calendar.inc' %]
 <style>
@@ -120,14 +120,14 @@
     <div class="container">
         <a href="/cgi-bin/koha/mainpage.pl">Home</a> ⁄
         <a href="/cgi-bin/koha/plugins/plugins-home.pl">Plugins</a> ⁄
-        <span class="active">Auto-Punctuation Plugin</span>
+        <span class="active">AACR2 MARC21 LCC Intellisense</span>
     </div>
 </div>
 <div class="main container-fluid">
     <div class="row">
         <div class="col-sm-10 col-sm-push-2">
             <main>
-                <h1>Auto-Punctuation Plugin</h1>
+                <h1>AACR2 MARC21 LCC Intellisense</h1>
 
                 [% IF settings.last_updated %]
                 <div class="alert alert-success">
@@ -150,7 +150,7 @@
                                         [% END %]
                                     </dd>
                                     <dt>Cataloging Standard</dt>
-                                    <dd>[% settings.default_standard || 'AACR2' %]</dd>
+                                    <dd>AACR2 (MARC21 · LCC)</dd>
                                     <dt>Debug Mode</dt>
                                     <dd>
                                         [% IF settings.debug_mode %]
@@ -173,6 +173,22 @@
                                             <span class="label label-success">Enabled</span>
                                         [% ELSE %]
                                             <span class="label label-danger">Disabled</span>
+                                        [% END %]
+                                    </dd>
+                                    <dt>AACR2 Guardrails</dt>
+                                    <dd>
+                                        [% IF settings.enforce_aacr2_guardrails %]
+                                            <span class="label label-success">Enforced</span>
+                                        [% ELSE %]
+                                            <span class="label label-default">Soft</span>
+                                        [% END %]
+                                    </dd>
+                                    <dt>Live Validation</dt>
+                                    <dd>
+                                        [% IF settings.enable_live_validation %]
+                                            <span class="label label-warning">On</span>
+                                        [% ELSE %]
+                                            <span class="label label-default">Off</span>
                                         [% END %]
                                     </dd>
                                     <dt>AI Classification</dt>
@@ -205,16 +221,18 @@
                             <legend>How to Use</legend>
                             <div class="rows">
                                 <p>This plugin automatically inserts standard punctuation marks in bibliographic fields during cataloging.</p>
-                                <span class="hint">Use this tool to streamline cataloging according to AACR2 or RDA standards.</span>
+                                <span class="hint">Use this tool to streamline cataloging according to AACR2-only MARC21 practice.</span>
                                 <p>Key features:</p>
                                 <ul>
-                                    <li>Supports AACR2 and RDA cataloging standards</li>
+                                    <li>AACR2-only punctuation guardrails</li>
                                     <li>Adds prefix punctuation on field entry</li>
                                     <li>Adds suffix punctuation on field exit</li>
                                     <li>Handles field relationships (e.g., 245$a adjusts based on $b, $c)</li>
                                     <li>Toggle on/off during cataloging</li>
+                                    <li>Intern and exclusion lists for controlled training</li>
+                                    <li>Live validation that blocks save when violations remain (optional)</li>
                                     <li>Interactive guide for training</li>
-                                    <li>AI-driven subject and classification insertion via OpenAI</li>
+                                    <li>AI-driven subject and LCC classification insertion</li>
                                 </ul>
                                 <p>To try it, <a href="/cgi-bin/koha/cataloguing/addbiblio.pl?frameworkcode=">create a new bibliographic record</a>.</p>
                                 <span class="hint">Click the link above to start cataloging with automatic punctuation.</span>

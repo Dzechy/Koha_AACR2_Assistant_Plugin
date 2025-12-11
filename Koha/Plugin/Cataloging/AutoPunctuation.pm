@@ -14,17 +14,17 @@ use LWP::UserAgent;
 use HTTP::Request;
 use Data::Dumper;
 
-our $VERSION = "1.2.1";
+our $VERSION = "1.3.0";
 
 our $metadata = {
-    name            => 'Auto-Punctuation for Cataloging',
-    author          => 'Your Name',
+    name            => 'AACR2 MARC21 LCC Intellisense',
+    author          => 'Duke Chijimaka Jonathan',
     date_authored   => '2025-06-02',
     date_updated    => '2025-06-20',
     minimum_version => '19.05.00.000',
     maximum_version => undef,
     version         => $VERSION,
-    description     => 'Automatically inserts standard punctuation in bibliographic fields according to AACR2 or RDA rules, with interactive training, rule customization, internship mode, and AI classification support via OpenAI or DeepSeek'
+    description     => 'AACR2-only MARC21 and Library of Congress Classification (LCC) intellisense for Koha cataloging: auto-punctuation, floating UI overlay, AI-driven subject access and call number suggestions across AACR2-required fields.'
 };
 
 sub new {
@@ -57,7 +57,7 @@ sub configure {
     if ($cgi->param('save')) {
         my $settings = {
             enabled => $cgi->param('enabled') ? 1 : 0,
-            default_standard => $cgi->param('default_standard') || 'AACR2',
+            default_standard => 'AACR2',
             debug_mode => $cgi->param('debug_mode') ? 1 : 0,
             enable_guide => $cgi->param('enable_guide') ? 1 : 0,
             guide_users => join(',', $cgi->multi_param('guide_users')) || '',
@@ -66,6 +66,11 @@ sub configure {
             internship_mode => $cgi->param('internship_mode') ? 1 : 0,
             internship_users => join(',', $cgi->multi_param('internship_users')) || '',
             internship_exclusion_list => $cgi->param('internship_exclusion_list') || '',
+            enforce_aacr2_guardrails => $cgi->param('enforce_aacr2_guardrails') ? 1 : 0,
+            enable_live_validation => $cgi->param('enable_live_validation') ? 1 : 0,
+            block_save_on_error => $cgi->param('block_save_on_error') ? 1 : 0,
+            required_fields => $cgi->param('required_fields') || '100a,245a,260c,300a,050a',
+            excluded_tags => $cgi->param('excluded_tags') || '',
             llm_api_provider => $cgi->param('llm_api_provider') || 'OpenAI',
             llm_api_key => $cgi->param('llm_api_key') || '',
             last_updated => Koha::DateUtils::dt_from_string()->strftime('%Y-%m-%d %H:%M:%S'),
@@ -196,14 +201,14 @@ sub _call_openai_api {
         messages => [
             {
                 role => "system",
-                content => "You are a library cataloging assistant. Analyze the provided bibliographic data and suggest appropriate subject headings, call numbers, and classifications."
+                content => "You are an AACR2-only, MARC21-driven cataloging and classification assistant working inside the Koha ILS cataloging interface. Provide Library of Congress Classification (LCC) classmarks, full call numbers, and LCSH suggestions only. Consider dependencies between AACR2-required fields when proposing punctuation or MARC placements."
             },
             {
                 role => "user",
                 content => $prompt
             }
         ],
-        max_tokens => 500,
+        max_tokens => 800,
         temperature => 0.3
     };
 
@@ -239,14 +244,14 @@ sub _call_deepseek_api {
         messages => [
             {
                 role => "system",
-                content => "You are a library cataloging assistant. Analyze the provided bibliographic data and suggest appropriate subject headings, call numbers, and classifications."
+                content => "You are an AACR2-only, MARC21-driven cataloging and classification assistant working inside the Koha ILS cataloging interface. Provide Library of Congress Classification (LCC) classmarks, full call numbers, and LCSH suggestions only. Consider dependencies between AACR2-required fields when proposing punctuation or MARC placements."
             },
             {
                 role => "user",
                 content => $prompt
             }
         ],
-        max_tokens => 500,
+        max_tokens => 800,
         temperature => 0.3
     };
 
@@ -274,21 +279,21 @@ sub _build_classification_prompt {
     my ($self, $data) = @_;
 
     my $text = "";
-    for my $field (qw(245a 245b 245c 520a)) {
+    for my $field (qw(100a 110a 245a 245b 245c 250a 260a 260b 260c 300a 300b 300c 490a 520a 650a 651a)) {
         if ($data->{$field}) {
             $text .= "$field: $data->{$field}\n";
         }
     }
 
     return qq{
-Analyze this bibliographic record and provide:
-1. Subject headings (LCSH format)
-2. Library of Congress Classification (LCC)
-3. Dewey Decimal Classification (DDC)
-4. Local call number suggestion
+You are assisting an original cataloger in Koha using AACR2-only, MARC21-only practices. Consider how AACR2-required and inter-dependent fields (1XX/245/250/260-264/300/490/5XX/6XX) interact. Provide:
+1. Subject headings in LCSH form (as strings).
+2. Library of Congress Classification ONLY (no DDC) and a complete LCC call number string.
+3. The MARC21 tags/subfields you touched (list of codes such as 245a, 650a, 651a).
+4. A brief AACR2 punctuation reminder for critical fields.
+Return JSON with keys: subjects (array), lcc (string), call_number (string), marc_fields (array), notes (string).
 Bibliographic data:
 $text
-Return as JSON with keys: subjects, lcc, ddc, call_number
     };
 }
 
@@ -311,8 +316,9 @@ sub _parse_openai_response {
     return {
         subjects => [],
         lcc => '',
-        ddc => '',
         call_number => '',
+        marc_fields => [],
+        notes => '',
         raw_response => $content
     };
 }
@@ -340,6 +346,11 @@ sub intranet_js {
         my $internship_mode = $settings->{internship_mode} ? 'true' : 'false';
         my $internship_users = $settings->{internship_users} || '';
         my $internship_exclusion_list = $settings->{internship_exclusion_list} || '';
+        my $enforce_aacr2_guardrails = $settings->{enforce_aacr2_guardrails} ? 'true' : 'false';
+        my $enable_live_validation = $settings->{enable_live_validation} ? 'true' : 'false';
+        my $block_save_on_error = $settings->{block_save_on_error} ? 'true' : 'false';
+        my $required_fields = $settings->{required_fields} || '';
+        my $excluded_tags = $settings->{excluded_tags} || '';
         my $api_provider = $settings->{llm_api_provider} || 'OpenAI';
         my $api_key = $settings->{llm_api_key} || '';
         my $last_updated = $settings->{last_updated} || '';
@@ -350,6 +361,8 @@ sub intranet_js {
         $custom_rules =~ s/"/\\"/g;
         $internship_users =~ s/"/\\"/g;
         $internship_exclusion_list =~ s/"/\\"/g;
+        $required_fields =~ s/"/\\"/g;
+        $excluded_tags =~ s/"/\\"/g;
         $api_key =~ s/"/\\"/g;
         $last_updated =~ s/"/\\"/g;
         $cataloging_standard =~ s/"/\\"/g;
@@ -374,6 +387,11 @@ sub intranet_js {
                         internshipMode: $internship_mode,
                         internshipUsers: "$internship_users",
                         internshipExclusionList: "$internship_exclusion_list",
+                        enforceAacr2Guardrails: $enforce_aacr2_guardrails,
+                        enableLiveValidation: $enable_live_validation,
+                        blockSaveOnError: $block_save_on_error,
+                        requiredFields: "$required_fields",
+                        excludedTags: "$excluded_tags",
                         llmApiProvider: "$api_provider",
                         llmApiKey: "$api_key",
                         last_updated: "$last_updated",
