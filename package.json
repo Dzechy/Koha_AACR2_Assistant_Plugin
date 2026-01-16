@@ -1,0 +1,25 @@
+{
+  "name": "koha-plugin-cataloging-autopunctuation",
+  "version": "2.0.0",
+  "description": "Koha plugin for AACR2-only MARC21 punctuation, guardrails, and assistive cataloging guidance",
+  "author": "Duke Chijimaka Jonathan",
+  "license": "GPL-3.0",
+  "bugs": {
+    "url": "https://github.com/yourusername/koha-plugin-cataloging-autopunctuation/issues"
+  },
+  "homepage": "https://github.com/yourusername/koha-plugin-cataloging-autopunctuation#readme",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yourusername/koha-plugin-cataloging-autopunctuation.git"
+  },
+  "keywords": [
+    "koha",
+    "plugin",
+    "cataloging",
+    "marc",
+    "punctuation"
+  ]
+}

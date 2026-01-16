@@ -1,0 +1,54 @@
+{
+  "type": "object",
+  "required": ["version", "request_id", "tag_context", "findings", "disclaimer"],
+  "properties": {
+    "version": { "type": "string" },
+    "request_id": { "type": "string" },
+    "tag_context": {
+      "type": "object",
+      "required": ["tag", "subfields"],
+      "properties": {
+        "tag": { "type": "string" },
+        "ind1": { "type": "string" },
+        "ind2": { "type": "string" },
+        "subfields": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["code", "value"],
+            "properties": {
+              "code": { "type": "string" },
+              "value": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["severity", "code", "message", "rationale", "proposed_fixes", "confidence"],
+        "properties": {
+          "severity": { "type": "string" },
+          "code": { "type": "string" },
+          "message": { "type": "string" },
+          "rationale": { "type": "string" },
+          "confidence": { "type": "number" },
+          "proposed_fixes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["label", "patch"],
+              "properties": {
+                "label": { "type": "string" },
+                "patch": { "type": "array" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "disclaimer": { "type": "string" }
+  }
+}

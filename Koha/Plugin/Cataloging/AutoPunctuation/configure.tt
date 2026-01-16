@@ -1,0 +1,879 @@
+[% INCLUDE 'doc-head-open.inc' %]
+<title>Koha: AACR2 MARC21 Intellisense + Guardrails Configuration</title>
+[% INCLUDE 'doc-head-close.inc' %]
+[% INCLUDE 'calendar.inc' %]
+<style>
+    :root {
+        --aacr2-accent: #0c223f;
+        --aacr2-accent-soft: #e7eef7;
+        --aacr2-border: #d7dde6;
+        --aacr2-surface: #f4f7fb;
+        --aacr2-card: #ffffff;
+        --aacr2-muted: #5b6b7c;
+        --aacr2-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+    }
+    #custom-rules-editor {
+        width: 100%;
+        height: 400px;
+        border: 1px solid var(--aacr2-border);
+        font-family: monospace;
+        border-radius: 6px;
+    }
+    .exclusion-list {
+        width: 100%;
+        min-height: 60px;
+        border-radius: 6px;
+        border: 1px solid var(--aacr2-border);
+    }
+    .configuration-section {
+        background: var(--aacr2-card);
+        border: 1px solid var(--aacr2-border);
+        border-radius: 8px;
+        margin-bottom: 24px;
+        box-shadow: var(--aacr2-shadow);
+    }
+    .configuration-section legend {
+        background: var(--aacr2-accent);
+        color: white;
+        padding: 8px 16px;
+        border-radius: 8px 8px 0 0;
+        margin: 0;
+        width: 100%;
+        font-size: 13px;
+        letter-spacing: 0.3px;
+        text-transform: uppercase;
+    }
+    .configuration-section .rows {
+        padding: 18px 18px 12px 18px;
+        margin: 0;
+    }
+    .configuration-section .rows > li {
+        padding: 10px 0;
+        border-bottom: 1px dashed var(--aacr2-border);
+    }
+    .configuration-section .rows > li:last-child {
+        border-bottom: none;
+    }
+    .hint {
+        color: var(--aacr2-muted);
+        font-size: 12px;
+        font-style: normal;
+        display: block;
+        margin-top: 3px;
+    }
+    .alert-success {
+        background: #dff0d8;
+        border: 1px solid #d6e9c6;
+        color: #3c763d;
+        padding: 10px;
+        border-radius: 4px;
+    }
+    .select2-container {
+        width: 100% !important;
+    }
+    .user-table {
+        width: 100%;
+        border-collapse: collapse;
+        background: var(--aacr2-card);
+        border-radius: 8px;
+        overflow: hidden;
+    }
+    .user-table th, .user-table td {
+        border: 1px solid var(--aacr2-border);
+        padding: 8px;
+    }
+    .user-table th {
+        background-color: var(--aacr2-surface);
+    }
+    .user-table th.sortable {
+        cursor: pointer;
+    }
+    .table-tools {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 10px;
+        align-items: center;
+    }
+    .table-tools input[type="text"] {
+        max-width: 280px;
+    }
+    .progress-controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 10px;
+        align-items: center;
+    }
+    .disabled-checkbox {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+    .warning-text {
+        color: red;
+        font-weight: bold;
+    }
+    .coverage-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 10px;
+    }
+    .coverage-table th, .coverage-table td {
+        border: 1px solid var(--aacr2-border);
+        padding: 6px 8px;
+        font-size: 12px;
+    }
+    .coverage-table th {
+        background: var(--aacr2-surface);
+    }
+    .coverage-status-covered { color: #3c763d; font-weight: bold; }
+    .coverage-status-excluded { color: #8a6d3b; font-weight: bold; }
+    .coverage-status-missing { color: #a94442; font-weight: bold; }
+</style>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/codemirror.min.css"/>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/css/select2.min.css"/>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css"/>
+<!-- Include jQuery -->
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+<!-- Include jQuery UI -->
+<link rel="stylesheet" href="https://code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css">
+<script src="https://code.jquery.com/ui/1.12.1/jquery-ui.min.js"></script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/mode/javascript/javascript.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/js/select2.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
+</head>
+<body>
+[% INCLUDE 'header.inc' %]
+[% INCLUDE 'cat-search.inc' %]
+<div id="breadcrumbs">
+    <a href="/cgi-bin/koha/mainpage.pl">Home</a> ›
+    <a href="/cgi-bin/koha/plugins/plugins-home.pl">Plugins</a> ›
+    <a href="#" class="active">AACR2 MARC21 Intellisense + Guardrails Configuration</a>
+</div>
+<div class="main container-fluid">
+    <div class="row">
+        <div class="col-sm-10 col-sm-push-2">
+            <main>
+                <h1>AACR2 MARC21 Intellisense + Guardrails Configuration</h1>
+
+                [% IF settings.last_updated %]
+                <div class="alert alert-success">
+                    <p><i class="fa fa-check-circle"></i> Last updated: [% settings.last_updated %]</p>
+                </div>
+                [% END %]
+                [% IF update_info && update_info.update_available %]
+                <div class="alert alert-warning">
+                    <p><i class="fa fa-exclamation-circle"></i> New release available: [% update_info.latest_version %] (current [% current_version %]).</p>
+                    <p><a href="[% update_info.release_url %]" target="_blank" rel="noopener">View release on GitHub</a></p>
+                </div>
+                [% END %]
+                <div class="alert alert-info">
+                    <p><strong>Author LinkedIn:</strong> <a href="[% author_linkedin %]" target="_blank" rel="noopener">[% author_linkedin %]</a></p>
+                    <p><strong>Plugin GitHub:</strong> <a href="[% plugin_repo_url %]" target="_blank" rel="noopener">[% plugin_repo_url %]</a></p>
+                </div>
+
+                <form method="post" enctype="multipart/form-data">
+                    <input type="hidden" name="class" value="[% CLASS %]"/>
+                    <input type="hidden" name="method" value="[% METHOD %]"/>
+                    <input type="hidden" name="save" value="1"/>
+
+                    <fieldset class="configuration-section">
+                        <legend>Basic Settings</legend>
+                        <ol class="rows">
+                            <li>
+                                <label for="enabled">Enable AACR2 Intellisense:</label>
+                                <input type="checkbox" name="enabled" id="enabled" value="1" [% IF settings.enabled %]checked[% END %]/>
+                                <span class="hint">Check to enable AACR2 punctuation and guardrails on cataloging forms</span>
+                            </li>
+                            <li>
+                                <label for="auto_apply_punctuation">Auto-Apply Punctuation:</label>
+                                <input type="checkbox" name="auto_apply_punctuation" id="auto_apply_punctuation" value="1" [% IF settings.auto_apply_punctuation %]checked[% END %]/>
+                                <span class="hint">When disabled, punctuation is suggested only and must be applied explicitly.</span>
+                            </li>
+                            <li>
+                                <label for="default_standard">Cataloging Standard:</label>
+                                <select name="default_standard" id="default_standard" class="form-control" style="width: auto; display: inline-block;">
+                                    <option value="AACR2" selected>AACR2</option>
+                                </select>
+                                <span class="hint">AACR2 is enforced for MARC21 punctuation and guardrails.</span>
+                            </li>
+                            <li>
+                                <label for="debug_mode">Debug Mode:</label>
+                                <input type="checkbox" name="debug_mode" id="debug_mode" value="1" [% IF settings.debug_mode %]checked[% END %]/>
+                                <span class="hint">Enable console logging for troubleshooting (only enable if needed)</span>
+                            </li>
+                        </ol>
+                    </fieldset>
+                    <fieldset class="configuration-section">
+                        <legend>Interactive Training Guide</legend>
+                        <ol class="rows">
+                            <li>
+                                <label for="enable_guide">Enable Interactive AACR2 Guide:</label>
+                                <input type="checkbox" name="enable_guide" id="enable_guide" value="1" [% IF settings.enable_guide %]checked[% END %]/>
+                                <span class="hint">Enable step-by-step AACR2 guide for training.</span>
+                            </li>
+                            <li>
+                                <label for="guide_users">Exclude Users from Guide:</label>
+                                <div class="table-tools">
+                                    <input type="text" id="guide-user-search" class="form-control input-sm" placeholder="Search users..."/>
+                                    <select id="guide-user-filter" class="form-control input-sm" style="width: 160px;">
+                                        <option value="all">All</option>
+                                        <option value="selected">Selected</option>
+                                        <option value="unselected">Unselected</option>
+                                    </select>
+                                </div>
+                                <table class="user-table" id="guide-users-table">
+                                    <thead>
+                                        <tr>
+                                            <th>
+                                                <input type="checkbox" id="selectAllGuideUsers" onclick="toggleSelectAll('guide_users', this.checked)"/>
+                                            </th>
+                                            <th class="sortable" data-sort="userid">User ID</th>
+                                            <th class="sortable" data-sort="name">Name</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        [% FOREACH user IN users %]
+                                        <tr>
+                                            <td>
+                                                <input type="checkbox" name="guide_users" value="[% user.userid %]"
+                                                [% FOREACH selected_user IN settings.guide_users.split(',') %]
+                                                    [% IF selected_user.trim == user.userid %]checked[% END %]
+                                                [% END %]
+                                                [% IF !settings.enable_guide %]disabled class="disabled-checkbox"[% END %]>
+                                            </td>
+                                            <td>[% user.userid %]</td>
+                                            <td>[% user.name %]</td>
+                                        </tr>
+                                        [% END %]
+                                    </tbody>
+                                </table>
+                                <span class="hint">Select users to exclude from accessing the guide (multiple selections allowed)</span>
+                            </li>
+                            <li>
+                                <label for="guide_exclusion_list">Manual Exclusion List (Optional):</label>
+                                <textarea name="guide_exclusion_list" id="guide_exclusion_list" class="exclusion-list form-control">[% settings.guide_exclusion_list %]</textarea>
+                                <span class="hint">Comma-separated usernames to exclude manually (e.g., user1,user2). Matches against loggedinusername class text content.</span>
+                            </li>
+                        </ol>
+                    </fieldset>
+                    <fieldset class="configuration-section">
+                        <legend>Custom Punctuation Rules</legend>
+                        <ol class="rows">
+                            <li>
+                                <label for="custom-rules-editor">Custom Rules (JSON):</label>
+                                <textarea name="custom_rules" id="custom-rules-editor">[% settings.custom_rules || '{}' %]</textarea>
+                                <span class="hint">Edit custom rules JSON. New format uses {"rules":[{...}]}, legacy format still supported.</span>
+                            </li>
+                            <li>
+                                <label>Import/Export Rules:</label>
+                                <div style="margin-top: 5px;">
+                                    <input type="file" name="rules_file" id="rules_file" accept=".json" class="form-control" style="width: auto; display: inline-block;"/>
+                                    <button type="submit" name="import_rules" value="1" class="btn btn-default">
+                                        <i class="fa fa-upload"></i> Import Rules
+                                    </button>
+                                    <button type="submit" name="export_rules" value="1" class="btn btn-default">
+                                        <i class="fa fa-download"></i> Export Rules
+                                    </button>
+                                </div>
+                                <span class="hint">Upload a .json file to import rules or download current rules</span>
+                            </li>
+                        </ol>
+                    </fieldset>
+                    <fieldset class="configuration-section">
+                        <legend>Internship Training Mode</legend>
+                        <ol class="rows">
+                            <li>
+                                <label for="internship_mode">Enable Internship Mode:</label>
+                                <input type="checkbox" name="internship_mode" id="internship_mode" value="1" [% IF settings.internship_mode %]checked[% END %]/>
+                                <span class="hint">Disable auto-punctuation for selected users to support manual learning</span>
+                            </li>
+                            <li>
+                                <label for="internship_users">Select Internship Users:</label>
+                                <div class="table-tools">
+                                    <input type="text" id="internship-user-search" class="form-control input-sm" placeholder="Search users..."/>
+                                    <select id="internship-user-filter" class="form-control input-sm" style="width: 160px;">
+                                        <option value="all">All</option>
+                                        <option value="selected">Selected</option>
+                                        <option value="unselected">Unselected</option>
+                                    </select>
+                                </div>
+                                <table class="user-table" id="internship-users-table">
+                                    <thead>
+                                        <tr>
+                                            <th>
+                                                <input type="checkbox" id="selectAllInternshipUsers" onclick="toggleSelectAll('internship_users', this.checked)"/>
+                                            </th>
+                                            <th class="sortable" data-sort="userid">User ID</th>
+                                            <th class="sortable" data-sort="name">Name</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        [% FOREACH user IN users %]
+                                        <tr>
+                                            <td>
+                                                <input type="checkbox" name="internship_users" value="[% user.userid %]"
+                                                [% FOREACH selected_user IN settings.internship_users.split(',') %]
+                                                    [% IF selected_user.trim == user.userid %]checked[% END %]
+                                                [% END %]
+                                                [% IF !settings.internship_mode %]disabled class="disabled-checkbox"[% END %]>
+                                            </td>
+                                            <td>[% user.userid %]</td>
+                                            <td>[% user.name %]</td>
+                                        </tr>
+                                        [% END %]
+                                    </tbody>
+                                </table>
+                                <span class="hint">Select users to exclude from auto-punctuation (multiple selections allowed)</span>
+                            </li>
+                            <li>
+                                <label for="internship_exclusion_list">Manual Exclusion List:</label>
+                                <textarea name="internship_exclusion_list" id="internship_exclusion_list" class="exclusion-list form-control">[% settings.internship_exclusion_list %]</textarea>
+                                <span class="hint">Comma-separated usernames to exclude manually (e.g., user1,user2). Matches against loggedinusername class text content.</span>
+                            </li>
+                        </ol>
+                    </fieldset>
+                    <fieldset class="configuration-section">
+                        <legend>Training Progress</legend>
+                        <div class="rows">
+                            <div class="progress-controls">
+                                <input type="text" id="progress-search" class="form-control input-sm" placeholder="Search users..."/>
+                                <select id="progress-status-filter" class="form-control input-sm" style="width: 180px;">
+                                    <option value="all">All statuses</option>
+                                    <option value="completed">Completed</option>
+                                    <option value="in_progress">In progress</option>
+                                    <option value="not_started">Not started</option>
+                                    <option value="no_data">No data</option>
+                                </select>
+                            </div>
+                            <table class="user-table" id="aacr2-progress-table">
+                                <thead>
+                                    <tr>
+                                        <th class="sortable" data-sort="userid">User ID</th>
+                                        <th class="sortable" data-sort="name">Name</th>
+                                        <th class="sortable" data-sort="steps_completed">Steps Done</th>
+                                        <th class="sortable" data-sort="steps_skipped">Steps Skipped</th>
+                                        <th class="sortable" data-sort="modules_completed">Modules Done</th>
+                                        <th class="sortable" data-sort="updated_at">Last Updated</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td colspan="6">Loading progress...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            <span class="hint">Progress updates when staff use the AACR2 training guide.</span>
+                        </div>
+                    </fieldset>
+                    <fieldset class="configuration-section">
+                        <legend>AACR2 Guardrails & Live Validation</legend>
+                        <ol class="rows">
+                            <li>
+                                <label for="enforce_aacr2_guardrails">Enforce AACR2 Guardrails:</label>
+                                <input type="checkbox" name="enforce_aacr2_guardrails" id="enforce_aacr2_guardrails" value="1" [% IF settings.enforce_aacr2_guardrails %]checked[% END %]/>
+                                <span class="hint">Lock AACR2-only punctuation and MARC21 placement with hard guards and warnings.</span>
+                            </li>
+                            <li>
+                                <label for="enable_live_validation">Enable Live Validation:</label>
+                                <input type="checkbox" name="enable_live_validation" id="enable_live_validation" value="1" [% IF settings.enable_live_validation %]checked[% END %]/>
+                                <span class="hint">Highlight violations in real time as catalogers type.</span>
+                            </li>
+                            <li>
+                                <label for="block_save_on_error">Block Save on Errors:</label>
+                                <input type="checkbox" name="block_save_on_error" id="block_save_on_error" value="1" [% IF settings.block_save_on_error %]checked[% END %]/>
+                                <span class="hint">Disable record save when AACR2 guardrail violations remain.</span>
+                            </li>
+                            <li>
+                                <label for="required_fields">Required AACR2 Fields:</label>
+                                <input type="text" name="required_fields" id="required_fields" value="[% settings.required_fields || '100a,245a,260c,300a,050a' %]" class="form-control"/>
+                                <span class="hint">Comma-separated MARC subfields to enforce (e.g., 100a,245a,260c,300a,050a).</span>
+                            </li>
+                            <li>
+                                <label for="excluded_tags">Excluded Tags (Optional):</label>
+                                <input type="text" name="excluded_tags" id="excluded_tags" value="[% settings.excluded_tags %]" class="form-control"/>
+                                <span class="hint">Comma-separated MARC tags/subfields to skip from automation (e.g., 590a,9XX).</span>
+                            </li>
+                            <li>
+                                <label for="strict_coverage_mode">Strict Coverage Mode:</label>
+                                <input type="checkbox" name="strict_coverage_mode" id="strict_coverage_mode" value="1" [% IF settings.strict_coverage_mode %]checked[% END %]/>
+                                <span class="hint">Warn when a field has no AACR2 rule defined.</span>
+                            </li>
+                            <li>
+                                <label for="enable_local_fields">Enable Local (9XX) Fields:</label>
+                                <input type="checkbox" name="enable_local_fields" id="enable_local_fields" value="1" [% IF settings.enable_local_fields %]checked[% END %]/>
+                                <span class="hint">Default is excluded. Enable to apply AACR2 rules to local fields.</span>
+                            </li>
+                            <li>
+                                <label for="local_fields_allowlist">Local Fields Allowlist:</label>
+                                <input type="text" name="local_fields_allowlist" id="local_fields_allowlist" value="[% settings.local_fields_allowlist %]" class="form-control"/>
+                                <span class="hint">Comma-separated local tags/subfields to include (e.g., 9XX,952a).</span>
+                            </li>
+                        </ol>
+                    </fieldset>
+                    <fieldset class="configuration-section">
+                        <legend>Coverage Report</legend>
+                        <div class="rows">
+                            <p>Baseline rule pack version: <strong>[% rules_version || 'unknown' %]</strong></p>
+                            <p>
+                                Covered: <strong>[% coverage_summary.covered %]</strong> ·
+                                Excluded: <strong>[% coverage_summary.excluded %]</strong> ·
+                                Not covered: <strong>[% coverage_summary.not_covered %]</strong>
+                            </p>
+                            <span class="hint">This report scans active MARC frameworks and compares tag/subfield coverage.</span>
+                            [% FOREACH framework IN coverage_report %]
+                                <details style="margin-top: 10px;">
+                                    <summary>
+                                        [% framework.frameworktext || framework.frameworkcode || 'Default' %]
+                                        (Total: [% framework.counts.total %], Covered: [% framework.counts.covered %], Excluded: [% framework.counts.excluded %], Missing: [% framework.counts.not_covered %])
+                                    </summary>
+                                    <table class="coverage-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Tag</th>
+                                                <th>Subfield</th>
+                                                <th>Status</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            [% FOREACH field IN framework.fields %]
+                                                <tr>
+                                                    <td>[% field.tag %]</td>
+                                                    <td>[% field.subfield %]</td>
+                                                    <td>
+                                                        [% IF field.status == 'covered' %]
+                                                            <span class="coverage-status-covered">Covered</span>
+                                                        [% ELSIF field.status == 'excluded' %]
+                                                            <span class="coverage-status-excluded">Excluded</span>
+                                                        [% ELSE %]
+                                                            <span class="coverage-status-missing">Not covered</span>
+                                                        [% END %]
+                                                    </td>
+                                                </tr>
+                                            [% END %]
+                                        </tbody>
+                                    </table>
+                                </details>
+                            [% END %]
+                            <div style="margin-top: 15px;">
+                                <label for="coverage-stubs">Recommended Rule Stubs (JSON):</label>
+                                <textarea id="coverage-stubs" class="form-control" rows="8" readonly>[% coverage_stubs_json %]</textarea>
+                                <span class="hint">Copy and paste into Custom Rules to extend coverage.</span>
+                            </div>
+                        </div>
+                    </fieldset>
+                    <fieldset class="configuration-section">
+                        <legend>AI Assist (Optional)</legend>
+                        <ol class="rows">
+                            <li>
+                                <label for="ai_enable">Enable AI Assist:</label>
+                                <input type="checkbox" name="ai_enable" id="ai_enable" value="1" [% IF settings.ai_enable %]checked[% END %]/>
+                                <span class="hint">AI is assistive only; suggestions require explicit acceptance.</span>
+                            </li>
+                            <li>
+                                <label for="ai_punctuation_explain">AI Punctuation Explanations:</label>
+                                <input type="checkbox" name="ai_punctuation_explain" id="ai_punctuation_explain" value="1" [% IF settings.ai_punctuation_explain %]checked[% END %]/>
+                                <span class="hint">Explain and propose AACR2 punctuation fixes for a selected field.</span>
+                            </li>
+                            <li>
+                                <label for="ai_subject_guidance">AI Subject Guidance:</label>
+                                <input type="checkbox" name="ai_subject_guidance" id="ai_subject_guidance" value="1" [% IF settings.ai_subject_guidance %]checked[% END %]/>
+                                <span class="hint">Suggest subject headings (guidance only).</span>
+                            </li>
+                            <li>
+                                <label for="ai_callnumber_guidance">AI Call Number Guidance:</label>
+                                <input type="checkbox" name="ai_callnumber_guidance" id="ai_callnumber_guidance" value="1" [% IF settings.ai_callnumber_guidance %]checked[% END %]/>
+                                <span class="hint">Suggest LCC call numbers only (no DDC).</span>
+                            </li>
+                            <li>
+                                <label for="llm_api_provider">AI Provider:</label>
+                                <select name="llm_api_provider" id="llm_api_provider" class="form-control" style="width: auto; display: inline-block;">
+                                    <option value="OpenAI" [% IF settings.llm_api_provider == 'OpenAI' %]selected[% END %]>OpenAI</option>
+                                    <option value="OpenRouter" [% IF settings.llm_api_provider == 'OpenRouter' %]selected[% END %]>OpenRouter</option>
+                                </select>
+                                <span class="hint">Provider determines the API endpoint and key used for AI requests.</span>
+                            </li>
+                            <li id="openai-api-key-row">
+                                <label for="llm_api_key">API Key:</label>
+                                <input type="password" name="llm_api_key" id="llm_api_key" value="[% settings.llm_api_key %]" class="form-control" style="width: 300px;"/>
+                                <span class="hint">OpenAI API key (stored server-side only; never exposed to the browser).</span>
+                            </li>
+                            <li id="openrouter-api-key-row">
+                                <label for="openrouter_api_key">OpenRouter API Key:</label>
+                                <input type="password" name="openrouter_api_key" id="openrouter_api_key" value="[% settings.openrouter_api_key %]" class="form-control" style="width: 300px;"/>
+                                <span class="hint">Used only when AI Provider is OpenRouter.</span>
+                            </li>
+                            <li class="ai-provider-openai">
+                                <label for="ai_model_openai">Model (OpenAI):</label>
+                                <select name="ai_model_openai" id="ai_model_openai" class="form-control" style="width: 300px;"></select>
+                                <span class="hint">Select a model from the OpenAI list.</span>
+                            </li>
+                            <li class="ai-provider-openai">
+                                <label for="ai_model_options_openai">Available Models (OpenAI):</label>
+                                <input type="text" name="ai_model_options_openai" id="ai_model_options_openai" value="[% settings.ai_model_options_openai || settings.ai_model_options %]" class="form-control"/>
+                                <span class="hint">Comma-separated OpenAI model list for the dropdown.</span>
+                            </li>
+                            <li class="ai-provider-openrouter">
+                                <label for="ai_model_openrouter">Model (OpenRouter):</label>
+                                <select name="ai_model_openrouter" id="ai_model_openrouter" class="form-control" style="width: 300px;"></select>
+                                <span class="hint">Select a model from the OpenRouter list.</span>
+                            </li>
+                            <li class="ai-provider-openrouter">
+                                <label for="ai_model_options_openrouter">Available Models (OpenRouter):</label>
+                                <input type="text" name="ai_model_options_openrouter" id="ai_model_options_openrouter" value="[% settings.ai_model_options_openrouter || settings.ai_model_options %]" class="form-control"/>
+                                <span class="hint">Comma-separated OpenRouter model list for the dropdown.</span>
+                            </li>
+                            <li>
+                                <label for="ai_timeout">Timeout (seconds):</label>
+                                <input type="number" name="ai_timeout" id="ai_timeout" value="[% settings.ai_timeout %]" class="form-control" style="width: 120px;"/>
+                            </li>
+                            <li>
+                                <label for="ai_max_tokens">Max Tokens:</label>
+                                <input type="number" name="ai_max_tokens" id="ai_max_tokens" value="[% settings.ai_max_tokens %]" class="form-control" style="width: 120px;"/>
+                            </li>
+                            <li>
+                                <label for="ai_temperature">Temperature:</label>
+                                <input type="text" name="ai_temperature" id="ai_temperature" value="[% settings.ai_temperature %]" class="form-control" style="width: 120px;"/>
+                            </li>
+                            <li>
+                                <label for="ai_confidence_threshold">Ghost Confidence Threshold:</label>
+                                <input type="text" name="ai_confidence_threshold" id="ai_confidence_threshold" value="[% settings.ai_confidence_threshold %]" class="form-control" style="width: 120px;"/>
+                                <span class="hint">Minimum confidence for AI ghost text (default 0.85).</span>
+                            </li>
+                            <li>
+                                <label for="ai_redaction_rules">Redaction Rules:</label>
+                                <input type="text" name="ai_redaction_rules" id="ai_redaction_rules" value="[% settings.ai_redaction_rules %]" class="form-control"/>
+                                <span class="hint">Comma-separated tags/subfields to redact before AI requests (e.g., 9XX,952a).</span>
+                            </li>
+                            <li>
+                                <label for="ai_rate_limit_per_minute">Rate Limit (per minute):</label>
+                                <input type="number" name="ai_rate_limit_per_minute" id="ai_rate_limit_per_minute" value="[% settings.ai_rate_limit_per_minute %]" class="form-control" style="width: 120px;"/>
+                            </li>
+                            <li>
+                                <label for="ai_cache_ttl_seconds">Cache TTL (seconds):</label>
+                                <input type="number" name="ai_cache_ttl_seconds" id="ai_cache_ttl_seconds" value="[% settings.ai_cache_ttl_seconds %]" class="form-control" style="width: 120px;"/>
+                            </li>
+                            <li>
+                                <label for="ai_retry_count">Retries:</label>
+                                <input type="number" name="ai_retry_count" id="ai_retry_count" value="[% settings.ai_retry_count %]" class="form-control" style="width: 120px;"/>
+                            </li>
+                            <li>
+                                <label for="ai_circuit_breaker_threshold">Circuit Breaker Threshold:</label>
+                                <input type="number" name="ai_circuit_breaker_threshold" id="ai_circuit_breaker_threshold" value="[% settings.ai_circuit_breaker_threshold %]" class="form-control" style="width: 120px;"/>
+                            </li>
+                            <li>
+                                <label for="ai_circuit_breaker_timeout">Circuit Breaker Timeout (seconds):</label>
+                                <input type="number" name="ai_circuit_breaker_timeout" id="ai_circuit_breaker_timeout" value="[% settings.ai_circuit_breaker_timeout %]" class="form-control" style="width: 120px;"/>
+                            </li>
+                            <li>
+                                <button type="button" class="btn btn-default" id="ai-test-connection">
+                                    <i class="fa fa-plug"></i> Test Connection
+                                </button>
+                                <span class="hint">Sends a lightweight request to confirm connectivity.</span>
+                            </li>
+                        </ol>
+                    </fieldset>
+
+                    <fieldset class="action">
+                        <input type="submit" value="Save Configuration" class="btn btn-primary"/>
+                        <a href="/cgi-bin/koha/plugins/run.pl?class=[% CLASS %]&method=tool" class="btn btn-default">Cancel</a>
+                    </fieldset>
+                </form>
+            </main>
+        </div>
+        <div class="col-sm-2 col-sm-pull-10">
+            <aside>
+                [% INCLUDE 'tools-menu.inc' %]
+            </aside>
+        </div>
+    </div>
+</div>
+<script>
+    // Initialize CodeMirror for JSON editor
+    var editor = CodeMirror.fromTextArea(document.getElementById('custom-rules-editor'), {
+        mode: 'application/json',
+        lineNumbers: true,
+        theme: 'default',
+        lint: true,
+        autoCloseBrackets: true,
+        matchBrackets: true,
+        indentWithTabs: false,
+        indentUnit: 2
+    });
+
+    // Toggle select all checkboxes
+    function toggleSelectAll(className, checked) {
+        $('input[type="checkbox"][name="' + className + '"]').prop('checked', checked);
+    }
+
+    // Toggle user checkboxes based on mode enable checkbox
+    function toggleUserCheckboxes() {
+        var isGuideEnabled = $('#enable_guide').is(':checked');
+        var isInternshipEnabled = $('#internship_mode').is(':checked');
+
+        $('input[name="guide_users"]')
+            .prop('disabled', !isGuideEnabled)
+            .toggleClass('disabled-checkbox', !isGuideEnabled);
+        $('input[name="internship_users"]')
+            .prop('disabled', !isInternshipEnabled)
+            .toggleClass('disabled-checkbox', !isInternshipEnabled);
+        $('#selectAllGuideUsers')
+            .prop('disabled', !isGuideEnabled)
+            .toggleClass('disabled-checkbox', !isGuideEnabled);
+        $('#selectAllInternshipUsers')
+            .prop('disabled', !isInternshipEnabled)
+            .toggleClass('disabled-checkbox', !isInternshipEnabled);
+
+        if (!isGuideEnabled) {
+            $('input[name="guide_users"]').prop('checked', false);
+            $('#selectAllGuideUsers').prop('checked', false);
+        }
+
+        if (!isInternshipEnabled) {
+            $('input[name="internship_users"]').prop('checked', false);
+            $('#selectAllInternshipUsers').prop('checked', false);
+        }
+    }
+
+    function normalizeText(value) {
+        return (value || '').toString().toLowerCase();
+    }
+
+    function filterUserTableRows(inputSelector, filterSelector, tableSelector) {
+        var query = normalizeText($(inputSelector).val());
+        var filter = $(filterSelector).val() || 'all';
+        $(tableSelector).find('tbody tr').each(function() {
+            var text = normalizeText($(this).text());
+            var checked = $(this).find('input[type="checkbox"]').is(':checked');
+            var matchesQuery = !query || text.indexOf(query) !== -1;
+            var matchesFilter = filter === 'all' || (filter === 'selected' && checked) || (filter === 'unselected' && !checked);
+            $(this).toggle(matchesQuery && matchesFilter);
+        });
+    }
+
+    function sortTableRows(tableSelector, columnIndex, asc) {
+        var $tbody = $(tableSelector).find('tbody');
+        var rows = $tbody.find('tr').get();
+        rows.sort(function(a, b) {
+            var textA = normalizeText($(a).children('td').eq(columnIndex).text());
+            var textB = normalizeText($(b).children('td').eq(columnIndex).text());
+            if (textA < textB) return asc ? -1 : 1;
+            if (textA > textB) return asc ? 1 : -1;
+            return 0;
+        });
+        $.each(rows, function(index, row) { $tbody.append(row); });
+    }
+
+    function setupSortableTable(tableSelector) {
+        var sortState = {};
+        $(tableSelector).find('th.sortable').each(function(index) {
+            $(this).on('click', function() {
+                sortState[index] = !sortState[index];
+                sortTableRows(tableSelector, index, sortState[index]);
+            });
+        });
+    }
+
+    function progressStatusFromSummary(summary) {
+        var total = summary.steps_total || 0;
+        var done = (summary.steps_completed || 0) + (summary.steps_skipped || 0);
+        if (!total) return 'no_data';
+        if (!done) return 'not_started';
+        if (done >= total) return 'completed';
+        return 'in_progress';
+    }
+
+    function formatTimestamp(epoch) {
+        if (!epoch) return '';
+        var date = new Date(epoch * 1000);
+        return date.toLocaleString();
+    }
+
+    function renderProgressTable(rows) {
+        var $tbody = $('#aacr2-progress-table tbody');
+        $tbody.empty();
+        if (!rows || !rows.length) {
+            $tbody.append('<tr><td colspan="6">No progress records yet.</td></tr>');
+            return;
+        }
+        rows.forEach(function(row) {
+            var summary = row.summary || {};
+            var status = progressStatusFromSummary(summary);
+            var statusLabel = {
+                completed: 'Completed',
+                in_progress: 'In progress',
+                not_started: 'Not started',
+                no_data: 'No data'
+            }[status] || 'Unknown';
+            var $tr = $('<tr>')
+                .attr('data-status', status)
+                .append('<td>' + (row.userid || '') + '</td>')
+                .append('<td>' + (row.name || '') + '</td>')
+                .append('<td>' + ((summary.steps_completed || 0) + (summary.steps_skipped || 0)) + '/' + (summary.steps_total || 0) + ' (' + statusLabel + ')</td>')
+                .append('<td>' + (summary.steps_skipped || 0) + '</td>')
+                .append('<td>' + (summary.modules_completed || 0) + '/' + (summary.modules_total || 0) + '</td>')
+                .append('<td>' + formatTimestamp(row.updated_at) + '</td>');
+            $tbody.append($tr);
+        });
+    }
+
+    function applyProgressFilters() {
+        var query = normalizeText($('#progress-search').val());
+        var status = $('#progress-status-filter').val();
+        $('#aacr2-progress-table tbody tr').each(function() {
+            var rowText = normalizeText($(this).text());
+            var rowStatus = $(this).attr('data-status') || '';
+            var matchesQuery = !query || rowText.indexOf(query) !== -1;
+            var matchesStatus = status === 'all' || status === rowStatus;
+            $(this).toggle(matchesQuery && matchesStatus);
+        });
+    }
+
+    function fetchProgressTable(pluginPath) {
+        fetch(pluginPath + '&method=guide_progress_list', { method: 'POST' })
+            .then(function(response) { return response.json(); })
+            .then(function(data) {
+                renderProgressTable((data && data.users) || []);
+                applyProgressFilters();
+                setupSortableTable('#aacr2-progress-table');
+            })
+            .catch(function() {
+                $('#aacr2-progress-table tbody').html('<tr><td colspan="6">Unable to load progress.</td></tr>');
+            });
+    }
+
+    // Document ready function
+    $(document).ready(function() {
+        var pluginPath = '/cgi-bin/koha/plugins/run.pl?class=[% CLASS %]';
+        // Initialize Select2 for multi-select dropdowns
+        $('#guide_users, #internship_users, #llm_api_provider').select2({
+            placeholder: "Select option",
+            allowClear: true,
+            width: '100%'
+        });
+
+        // Toggle user checkboxes based on initial state
+        toggleUserCheckboxes();
+
+        // Event handlers for enabling/disabling user checkboxes
+        $('#enable_guide').change(toggleUserCheckboxes);
+        $('#internship_mode').change(toggleUserCheckboxes);
+
+        // User table search/sort
+        function applyGuideUserFilters() {
+            filterUserTableRows('#guide-user-search', '#guide-user-filter', '#guide-users-table');
+        }
+        function applyInternshipUserFilters() {
+            filterUserTableRows('#internship-user-search', '#internship-user-filter', '#internship-users-table');
+        }
+        $('#guide-user-search').on('input', applyGuideUserFilters);
+        $('#guide-user-filter').on('change', applyGuideUserFilters);
+        $('#guide-users-table').on('change', 'input[type="checkbox"]', applyGuideUserFilters);
+        $('#internship-user-search').on('input', applyInternshipUserFilters);
+        $('#internship-user-filter').on('change', applyInternshipUserFilters);
+        $('#internship-users-table').on('change', 'input[type="checkbox"]', applyInternshipUserFilters);
+        setupSortableTable('#guide-users-table');
+        setupSortableTable('#internship-users-table');
+
+        // Check if settings were saved successfully
+        [% IF saved_successfully %]
+            toastr.success('Settings saved successfully!');
+        [% END %]
+
+        function populateModelSelect(selectId, optionsInputId, fallback) {
+            var modelListRaw = ($(optionsInputId).val() || '').split(',');
+            var modelList = modelListRaw.map(function(item) { return item.trim(); }).filter(Boolean);
+            var $modelSelect = $(selectId);
+            var selectedModel = $modelSelect.val() || fallback || '';
+            if (!modelList.length && selectedModel) {
+                modelList.push(selectedModel);
+            }
+            $modelSelect.empty();
+            modelList.forEach(function(model) {
+                var option = $('<option>').attr('value', model).text(model);
+                if (model === selectedModel) option.attr('selected', 'selected');
+                $modelSelect.append(option);
+            });
+        }
+
+        var defaultOpenAiModel = '[% settings.ai_model_openai || settings.ai_model %]';
+        var defaultOpenRouterModel = '[% settings.ai_model_openrouter || settings.ai_model %]';
+        populateModelSelect('#ai_model_openai', '#ai_model_options_openai', defaultOpenAiModel);
+        populateModelSelect('#ai_model_openrouter', '#ai_model_options_openrouter', defaultOpenRouterModel);
+        $('#ai_model_options_openai').on('change', function() {
+            populateModelSelect('#ai_model_openai', '#ai_model_options_openai', defaultOpenAiModel);
+        });
+        $('#ai_model_options_openrouter').on('change', function() {
+            populateModelSelect('#ai_model_openrouter', '#ai_model_options_openrouter', defaultOpenRouterModel);
+        });
+
+        function toggleAiProviderFields() {
+            var provider = ($('#llm_api_provider').val() || 'OpenAI').toLowerCase();
+            var isOpenRouter = provider === 'openrouter';
+            var $openaiRow = $('#openai-api-key-row');
+            var $openrouterRow = $('#openrouter-api-key-row');
+            $openaiRow.toggle(!isOpenRouter);
+            $openrouterRow.toggle(isOpenRouter);
+            $openaiRow.find('input').prop('disabled', isOpenRouter);
+            $openrouterRow.find('input').prop('disabled', !isOpenRouter);
+            $('.ai-provider-openai').toggle(!isOpenRouter)
+                .find('input, select').prop('disabled', isOpenRouter);
+            $('.ai-provider-openrouter').toggle(isOpenRouter)
+                .find('input, select').prop('disabled', !isOpenRouter);
+        }
+
+        toggleAiProviderFields();
+        $('#llm_api_provider').on('change', toggleAiProviderFields);
+
+        // Training progress
+        fetchProgressTable(pluginPath);
+        $('#progress-search').on('input', applyProgressFilters);
+        $('#progress-status-filter').on('change', applyProgressFilters);
+
+        $('#ai-test-connection').on('click', function() {
+            toastr.info('Testing AI connection...');
+            fetch(pluginPath + '&method=test_connection', { method: 'POST' })
+                .then(resp => resp.json())
+                .then(data => {
+                    if (data.error) {
+                        toastr.error(data.error);
+                        return;
+                    }
+                    toastr.success('AI connection successful.');
+                })
+                .catch(err => toastr.error('AI connection failed: ' + err.message));
+        });
+    });
+
+    // Validate JSON on save
+    $('form').on('submit', function(e) {
+        if ($(e.target).find('[name="save"]').length) {
+            try {
+                JSON.parse(editor.getValue());
+            } catch (error) {
+                e.preventDefault();
+                alert('Invalid JSON in custom rules: ' + error.message);
+                return false;
+            }
+        }
+    });
+
+    // Auto-format JSON
+    $('#custom-rules-editor').next().find('.CodeMirror').after(
+        '<button type="button" class="btn btn-sm btn-default" onclick="formatJSON()" style="margin-top: 5px;">' +
+        '<i class="fa fa-indent"></i> Format JSON</button>'
+    );
+
+    function formatJSON() {
+        try {
+            var formatted = JSON.stringify(JSON.parse(editor.getValue()), null, 2);
+            editor.setValue(formatted);
+        } catch (error) {
+            alert('Cannot format: Invalid JSON');
+        }
+    }
+</script>
+[% INCLUDE 'intranet-bottom.inc' %]

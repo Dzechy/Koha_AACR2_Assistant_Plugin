@@ -1,0 +1,63 @@
+{
+  "type": "object",
+  "required": ["request_id", "tag_context"],
+  "properties": {
+    "request_id": { "type": "string" },
+    "tag_context": {
+      "type": "object",
+      "required": ["tag", "subfields"],
+      "properties": {
+        "tag": { "type": "string" },
+        "ind1": { "type": "string" },
+        "ind2": { "type": "string" },
+        "subfields": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["code", "value"],
+            "properties": {
+              "code": { "type": "string" },
+              "value": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "record_context": {
+      "type": "object",
+      "properties": {
+        "fields": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["tag", "subfields"],
+            "properties": {
+              "tag": { "type": "string" },
+              "ind1": { "type": "string" },
+              "ind2": { "type": "string" },
+              "subfields": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["code", "value"],
+                  "properties": {
+                    "code": { "type": "string" },
+                    "value": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "features": {
+      "type": "object",
+      "properties": {
+        "punctuation_explain": { "type": "boolean" },
+        "subject_guidance": { "type": "boolean" },
+        "call_number_guidance": { "type": "boolean" }
+      }
+    }
+  }
+}
