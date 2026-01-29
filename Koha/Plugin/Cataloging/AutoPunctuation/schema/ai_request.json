@@ -1,23 +1,28 @@
 {
   "type": "object",
   "required": ["request_id", "tag_context"],
+  "additionalProperties": false,
   "properties": {
-    "request_id": { "type": "string" },
+    "request_id": { "type": "string", "maxLength": 64 },
     "tag_context": {
       "type": "object",
-      "required": ["tag", "subfields"],
+      "required": ["tag", "occurrence", "subfields"],
+      "additionalProperties": false,
       "properties": {
-        "tag": { "type": "string" },
-        "ind1": { "type": "string" },
-        "ind2": { "type": "string" },
+        "tag": { "type": "string", "maxLength": 3 },
+        "ind1": { "type": "string", "maxLength": 1 },
+        "ind2": { "type": "string", "maxLength": 1 },
+        "occurrence": { "type": "number" },
         "subfields": {
           "type": "array",
+          "maxItems": 20,
           "items": {
             "type": "object",
             "required": ["code", "value"],
+            "additionalProperties": false,
             "properties": {
-              "code": { "type": "string" },
-              "value": { "type": "string" }
+              "code": { "type": "string", "maxLength": 1 },
+              "value": { "type": "string", "maxLength": 2000 }
             }
           }
         }
@@ -25,24 +30,30 @@
     },
     "record_context": {
       "type": "object",
+      "additionalProperties": false,
       "properties": {
         "fields": {
           "type": "array",
+          "maxItems": 30,
           "items": {
             "type": "object",
             "required": ["tag", "subfields"],
+            "additionalProperties": false,
             "properties": {
-              "tag": { "type": "string" },
-              "ind1": { "type": "string" },
-              "ind2": { "type": "string" },
+              "tag": { "type": "string", "maxLength": 3 },
+              "ind1": { "type": "string", "maxLength": 1 },
+              "ind2": { "type": "string", "maxLength": 1 },
+              "occurrence": { "type": "number" },
               "subfields": {
                 "type": "array",
+                "maxItems": 30,
                 "items": {
                   "type": "object",
                   "required": ["code", "value"],
+                  "additionalProperties": false,
                   "properties": {
-                    "code": { "type": "string" },
-                    "value": { "type": "string" }
+                    "code": { "type": "string", "maxLength": 1 },
+                    "value": { "type": "string", "maxLength": 2000 }
                   }
                 }
               }
@@ -53,6 +64,7 @@
     },
     "features": {
       "type": "object",
+      "additionalProperties": false,
       "properties": {
         "punctuation_explain": { "type": "boolean" },
         "subject_guidance": { "type": "boolean" },

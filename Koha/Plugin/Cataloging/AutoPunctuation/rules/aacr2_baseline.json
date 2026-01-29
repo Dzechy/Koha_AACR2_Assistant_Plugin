@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "version": "1.2.0",
   "standard": "AACR2",
   "description": "Baseline AACR2/ISBD punctuation rules for MARC21 bibliographic records. Deterministic rules only; AI is assistive.",
   "rules": [
@@ -353,15 +353,23 @@
       "tag": "245",
       "subfields": ["a"],
       "severity": "ERROR",
-      "rationale": "AACR2 title proper ends with a period when no other title subfields follow.",
+      "rationale": "AACR2 title proper ends with a period when no other title subfields follow, or with space-colon-space when $b follows.",
       "checks": [
         {
           "type": "punctuation",
           "case_mode": "initial_upper",
+          "replace_ellipses_with_dash": true,
+          "replace_square_brackets_with_parentheses": true,
+          "end_not_in": [" :", ":", " /", "/", " ;", ";", " ,", ",", " =", "="],
           "suffix_mode": "conditional_following",
           "when_following_subfields": ["b", "c", "n", "p"],
-          "suffix_if_following": "",
+          "suffix_if_following_prefixes": [
+            { "prefix": "=", "suffix": " = " }
+          ],
+          "suffix_if_following": " : ",
           "suffix_if_last": ".",
+          "end_in": ["?", "!"],
+          "normalize_punctuation": true,
           "severity": "ERROR",
           "message": "Apply AACR2 terminal punctuation for title proper."
         }
@@ -383,16 +391,21 @@
       "tag": "245",
       "subfields": ["b"],
       "severity": "WARNING",
-      "rationale": "AACR2 subtitle follows with space-colon-space.",
+      "rationale": "AACR2 subtitle follows after a space-colon-space at the end of 245$a.",
       "checks": [
         {
           "type": "punctuation",
           "case_mode": "initial_lower",
-          "prefix": " : ",
-          "suffix_mode": "when_last",
+          "strip_prefixes": [":", "="],
+          "end_not_in": [" :", ":", " =", "=", " /", "/", " ;", ";", " ,", ","],
+          "suffix_mode": "conditional_following",
+          "when_following_subfields": ["c"],
+          "suffix_if_following": "",
           "suffix_if_last": ".",
+          "end_in": [".", "?", "!"],
+          "normalize_punctuation": true,
           "severity": "WARNING",
-          "message": "Use space-colon-space before subtitle."
+          "message": "Ensure subtitle punctuation is handled at the end of 245$a."
         }
       ],
       "fixes": [
@@ -404,20 +417,24 @@
         }
       ],
       "examples": [
-        { "before": "a novel", "after": " : a novel." }
+        { "before": "a novel", "after": "a novel." }
       ]
     },
     {
       "id": "AACR2_TITLE_245C_001",
       "tag": "245",
       "subfields": ["c"],
+      "repeat_policy": "first_only",
       "severity": "WARNING",
       "rationale": "AACR2 statement of responsibility follows with space-slash-space and ends with a period.",
       "checks": [
         {
           "type": "punctuation",
           "prefix": " / ",
+          "end_not_in": [" /", "/", " ;", ";", " ,", ","],
           "suffix": ".",
+          "end_in": [".", "?", "!"],
+          "normalize_punctuation": true,
           "severity": "WARNING",
           "message": "Use space-slash-space before statement of responsibility."
         }
@@ -435,31 +452,135 @@
       ]
     },
     {
-      "id": "AACR2_TITLE_245NP_001",
+      "id": "AACR2_TITLE_245C_002",
       "tag": "245",
-      "subfields": ["n", "p"],
+      "subfields": ["c"],
+      "previous_subfield_is": ["c"],
       "severity": "INFO",
-      "rationale": "AACR2 title numbering and part statements use period or comma separators.",
+      "rationale": "Additional statements of responsibility are separated with semicolon-space.",
       "checks": [
         {
           "type": "punctuation",
-          "prefix": ". ",
-          "suffix_mode": "when_last",
-          "suffix_if_last": "",
+          "prefix": " ; ",
+          "end_not_in": [" ;", ";", " /", "/", " ,", ","],
+          "suffix": ".",
+          "end_in": [".", "?", "!"],
+          "normalize_punctuation": true,
           "severity": "INFO",
-          "message": "Use period-space before numbering or part title."
+          "message": "Use semicolon-space for additional statements of responsibility."
         }
       ],
       "fixes": [
         {
-          "label": "Apply AACR2 numbering/part punctuation",
+          "label": "Apply AACR2 additional responsibility punctuation",
           "patch": [
             { "op": "replace_subfield", "value_template": "{{expected}}" }
           ]
         }
       ],
       "examples": [
-        { "before": "Part 1", "after": ". Part 1" }
+        { "before": "edited by John Smith", "after": " ; edited by John Smith." }
+      ]
+    },
+    {
+      "id": "AACR2_TITLE_245N_001",
+      "tag": "245",
+      "subfields": ["n"],
+      "severity": "INFO",
+      "rationale": "AACR2 numbering follows with period-space; comma-space precedes part title.",
+      "checks": [
+        {
+          "type": "punctuation",
+          "prefix": ". ",
+          "end_not_in": [" .", ".", " ,", ","],
+          "suffix_mode": "conditional_following",
+          "when_following_subfields": ["p"],
+          "suffix_if_following": ", ",
+          "suffix_if_last": "",
+          "end_in": [","],
+          "normalize_punctuation": true,
+          "severity": "INFO",
+          "message": "Use period-space before numbering and comma-space before part title."
+        }
+      ],
+      "fixes": [
+        {
+          "label": "Apply AACR2 numbering punctuation",
+          "patch": [
+            { "op": "replace_subfield", "value_template": "{{expected}}" }
+          ]
+        }
+      ],
+      "examples": [
+        { "before": "Part 1", "after": ". Part 1," }
+      ]
+    },
+    {
+      "id": "AACR2_TITLE_245P_001",
+      "tag": "245",
+      "subfields": ["p"],
+      "previous_subfield_is": ["n"],
+      "severity": "INFO",
+      "rationale": "Part titles follow numbering with comma-space.",
+      "checks": [
+        {
+          "type": "punctuation",
+          "prefix": ", ",
+          "end_not_in": [" ,", ",", " .", ".", " ;", ";"],
+          "suffix_mode": "conditional_following",
+          "when_following_subfields": ["b", "c"],
+          "suffix_if_following": "",
+          "suffix_if_last": ".",
+          "end_in": [".", "?", "!"],
+          "normalize_punctuation": true,
+          "severity": "INFO",
+          "message": "Use comma-space before part title."
+        }
+      ],
+      "fixes": [
+        {
+          "label": "Apply AACR2 part title punctuation",
+          "patch": [
+            { "op": "replace_subfield", "value_template": "{{expected}}" }
+          ]
+        }
+      ],
+      "examples": [
+        { "before": "The early years", "after": ", The early years." }
+      ]
+    },
+    {
+      "id": "AACR2_TITLE_245P_002",
+      "tag": "245",
+      "subfields": ["p"],
+      "only_when_no_other_rule": true,
+      "severity": "INFO",
+      "rationale": "Part titles without numbering follow with period-space.",
+      "checks": [
+        {
+          "type": "punctuation",
+          "prefix": ". ",
+          "end_not_in": [" .", ".", " ,", ",", " ;", ";"],
+          "suffix_mode": "conditional_following",
+          "when_following_subfields": ["b", "c"],
+          "suffix_if_following": "",
+          "suffix_if_last": ".",
+          "end_in": [".", "?", "!"],
+          "normalize_punctuation": true,
+          "severity": "INFO",
+          "message": "Use period-space before part title."
+        }
+      ],
+      "fixes": [
+        {
+          "label": "Apply AACR2 part title punctuation",
+          "patch": [
+            { "op": "replace_subfield", "value_template": "{{expected}}" }
+          ]
+        }
+      ],
+      "examples": [
+        { "before": "The early years", "after": ". The early years." }
       ]
     },
     {
@@ -526,10 +647,13 @@
       "checks": [
         {
           "type": "punctuation",
+          "end_not_in": [" :", ":", " ;", ";", " ,", ","],
           "suffix_mode": "conditional_following",
           "when_following_subfields": ["b", "c"],
           "suffix_if_following": " : ",
           "suffix_if_last": ".",
+          "end_in": [":"],
+          "normalize_punctuation": true,
           "severity": "ERROR",
           "message": "Use space-colon-space after place of publication."
         }
@@ -555,10 +679,13 @@
       "checks": [
         {
           "type": "punctuation",
+          "end_not_in": [" ,", ",", " ;", ";", " : ", ":"],
           "suffix_mode": "conditional_following",
           "when_following_subfields": ["c"],
           "suffix_if_following": ", ",
           "suffix_if_last": ".",
+          "end_in": [","],
+          "normalize_punctuation": true,
           "severity": "ERROR",
           "message": "Use comma-space after publisher."
         }
@@ -584,7 +711,10 @@
       "checks": [
         {
           "type": "punctuation",
+          "end_not_in": [" .", ".", " ;", ";", " ,", ","],
           "suffix": ".",
+          "end_in": [".", "?", "!"],
+          "normalize_punctuation": true,
           "severity": "ERROR",
           "message": "Add terminal period to publication date."
         }
@@ -605,13 +735,84 @@
       "id": "AACR2_PHYSICAL_300A_001",
       "tag": "300",
       "subfields": ["a"],
+      "requires_subfields": ["b"],
       "severity": "ERROR",
-      "rationale": "AACR2 extent ends with a period; other physical details follow in a separate subfield.",
+      "rationale": "AACR2 extent ends with space-colon-space when other physical details follow.",
       "checks": [
         {
           "type": "punctuation",
+          "end_not_in": [" :", ":", " ;", ";", " ,", ","],
+          "suffix_mode": "conditional_following",
+          "when_following_subfields": ["b"],
+          "suffix_if_following": " : ",
+          "suffix_if_last": ".",
+          "end_in": [":"],
+          "normalize_punctuation": true,
           "severity": "ERROR",
+          "message": "End extent with space-colon-space before other details."
+        }
+      ],
+      "fixes": [
+        {
+          "label": "Apply AACR2 extent punctuation",
+          "patch": [
+            { "op": "replace_subfield", "value_template": "{{expected}}" }
+          ]
+        }
+      ],
+      "examples": [
+        { "before": "xii, 180 p", "after": "xii, 180 p :" }
+      ]
+    },
+    {
+      "id": "AACR2_PHYSICAL_300A_002",
+      "tag": "300",
+      "subfields": ["a"],
+      "requires_subfields": ["c"],
+      "forbids_subfields": ["b"],
+      "severity": "ERROR",
+      "rationale": "AACR2 extent ends with space-semicolon-space when dimensions follow directly.",
+      "checks": [
+        {
+          "type": "punctuation",
+          "end_not_in": [" ;", ";", " :", ":", " ,", ","],
+          "suffix_mode": "conditional_following",
+          "when_following_subfields": ["c"],
+          "suffix_if_following": " ; ",
+          "suffix_if_last": ".",
+          "end_in": [";"],
+          "normalize_punctuation": true,
+          "severity": "ERROR",
+          "message": "End extent with space-semicolon-space before dimensions."
+        }
+      ],
+      "fixes": [
+        {
+          "label": "Apply AACR2 extent punctuation",
+          "patch": [
+            { "op": "replace_subfield", "value_template": "{{expected}}" }
+          ]
+        }
+      ],
+      "examples": [
+        { "before": "xii, 180 p", "after": "xii, 180 p ;" }
+      ]
+    },
+    {
+      "id": "AACR2_PHYSICAL_300A_003",
+      "tag": "300",
+      "subfields": ["a"],
+      "forbids_subfields": ["b", "c"],
+      "severity": "ERROR",
+      "rationale": "AACR2 extent ends with a period when no other physical detail follows.",
+      "checks": [
+        {
+          "type": "punctuation",
+          "end_not_in": [" .", ".", " ;", ";", " ,", ","],
           "suffix": ".",
+          "end_in": [".", "?", "!"],
+          "normalize_punctuation": true,
+          "severity": "ERROR",
           "message": "End extent with a period."
         }
       ],
@@ -636,6 +837,7 @@
       "checks": [
         {
           "type": "punctuation",
+          "end_not_in": [" :", ":", " ;", ";", " ,", ","],
           "prefix_mode": "conditional_preceding",
           "when_preceding_subfields": ["a"],
           "prefix_if_preceding": " : ",
@@ -643,6 +845,8 @@
           "when_following_subfields": ["c"],
           "suffix_if_following": " ; ",
           "suffix_if_last": ".",
+          "end_in": [";"],
+          "normalize_punctuation": true,
           "severity": "WARNING",
           "message": "Use colon before other physical details and semicolon before dimensions."
         }
@@ -668,7 +872,10 @@
       "checks": [
         {
           "type": "punctuation",
+          "end_not_in": [" .", ".", " ;", ";", " ,", ","],
           "suffix": ".",
+          "end_in": [".", "?", "!"],
+          "normalize_punctuation": true,
           "severity": "WARNING",
           "message": "Add terminal period to dimensions."
         }

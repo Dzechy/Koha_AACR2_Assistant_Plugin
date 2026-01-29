@@ -2,7 +2,7 @@
 
 Buy Me a Coffee (Crypto)
 
-If this saved you time (or a shoot 👀), you can fuel more dev with a small tip:
+If this saved you time (or a shout 👀), you can fuel more dev with a small tip:
 
 BTC: 19JSzRPB5qp3TKZVBeVUR8xmgntxKui5cc
 
@@ -18,24 +18,30 @@ Thanks a ton! 🙏
 
 ## Table of Contents
 
-- Overview
-- Key Features
-- Requirements
-- Installation
-- Configuration
-- Using the Plugin
-- Training Guide Modules
-- Internship Mode
-- AI Assist
-- Admin Training Progress
-- Copy Cataloging Notes
-- Troubleshooting
-- Development Notes
-- License
+- [Overview](#overview)
+- [Changelog](#changelog)
+- [Key Features](#key-features)
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Using the Plugin](#using-the-plugin)
+- [Training Guide Modules](#training-guide-modules)
+- [Internship Mode](#internship-mode)
+- [AI Assist](#ai-assist)
+- [Admin Training Progress](#admin-training-progress)
+- [Copy Cataloging Notes](#copy-cataloging-notes)
+- [Troubleshooting](#troubleshooting)
+- [Development Notes](#development-notes)
+- [Testing](#testing)
+- [License](#license)
 
 ## Overview
 
 The Koha AACR2 AI Guardrail Assistant enforces AACR2-only MARC21 punctuation rules with guardrails, live validation, and an optional AI assist layer. It adds a floating cataloging assistant panel, inline indicators, an interactive training guide, and configurable guardrails designed for both training and production cataloging.
+
+## Changelog
+
+- 2026-01-29: Progress endpoints now return JSON on errors, accept JSON or form payloads, and store per-user progress safely with migration from legacy data. The guide UI reports sync failures with status messages. Configuration tabs now use Bootstrap 5 tab markup styled as hyperlinks. Added OpenAI reasoning effort controls, higher default max output tokens, and truncation warnings.
 
 ## Key Features
 
@@ -44,7 +50,8 @@ The Koha AACR2 AI Guardrail Assistant enforces AACR2-only MARC21 punctuation rul
 - Floating assistant panel with apply/undo/ignore controls.
 - Training guide with modules (jump to Title, Publication, Subjects, etc.).
 - Internship mode to disable auto-apply while keeping warnings visible.
-- AI assist for punctuation explanations and guidance (optional).
+- AI assist for punctuation explanations, classification, and subject guidance (optional).
+- Deterministic call number builder (classification + cutter + year) with manual override.
 - Coverage report and custom rules support.
 
 ## Requirements
@@ -72,6 +79,7 @@ Important options:
 - `Internship Mode` to disable auto-apply for selected users.
 - `Required AACR2 Fields` to enforce required subfields.
 - AI options for OpenAI connectivity and model selection.
+  Model lists are pulled dynamically from the selected provider.
 
 ## Using the Plugin
 
@@ -105,7 +113,7 @@ Internship mode disables auto-apply and apply/undo actions for selected users, w
 
 ## AI Assist
 
-AI assist is optional and requires an API key. AI responses are constrained to JSON and never auto-apply changes. All AI suggestions require explicit user acceptance.
+AI assist is optional and requires an API key. AI responses are constrained to JSON and never auto-apply changes. All AI suggestions require explicit user acceptance. Classification and subject guidance are based on the title, while call numbers are built deterministically from classification + cutter + year.
 
 ## Admin Training Progress
 
@@ -127,6 +135,7 @@ The plugin refreshes guardrails after load and watches for dynamic field inserts
 - Confirm required fields and excluded tags are correctly configured.
 - If AI assist fails, verify API key and model settings.
 - For missing guide steps, ensure fields exist on the cataloging form.
+- OpenRouter JSON issues: some models ignore strict JSON. The plugin now strips code fences, repairs JSON when possible, and falls back to plain text while showing debug details in the AI panel. If you see parsing errors, disable strict JSON mode or switch models.
 
 ## Development Notes
 
@@ -138,6 +147,20 @@ Core files:
 - `Koha/Plugin/Cataloging/AutoPunctuation/rules/aacr2_baseline.json` (rules)
 
 Custom rules can be added in JSON format on the configuration page.
+
+## Testing
+
+Run the rules engine regression fixtures:
+
+```bash
+node tests/rules_engine.test.js
+```
+
+Perl schema/regex validator tests (requires a Koha environment):
+
+```bash
+prove -l t
+```
 
 ## License
 

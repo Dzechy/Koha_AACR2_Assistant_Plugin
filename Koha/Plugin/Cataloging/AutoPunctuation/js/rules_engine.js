@@ -2,6 +2,33 @@
     'use strict';
 
     const DEFAULT_RULES = Object.freeze({ rules: [] });
+    const ruleWarnings = new Set();
+
+    function warnRule(message) {
+        if (!message || ruleWarnings.has(message)) return;
+        ruleWarnings.add(message);
+        if (global.AACR2RulesEngine && typeof global.AACR2RulesEngine.onWarning === 'function') {
+            global.AACR2RulesEngine.onWarning(message);
+        }
+    }
+
+    function safeRegExp(pattern, label) {
+        if (!pattern) return null;
+        if (pattern.length > 120) {
+            warnRule(`${label} regex is too long or complex.`);
+            return null;
+        }
+        if (/\([^)]*(?:\+|\*|\{\d+,?\d*\})[^)]*\)(?:\+|\*|\?|\{\d+,?\d*\})/.test(pattern)) {
+            warnRule(`${label} regex is too complex.`);
+            return null;
+        }
+        try {
+            return new RegExp(pattern);
+        } catch (err) {
+            warnRule(`${label} regex is invalid.`);
+            return null;
+        }
+    }
 
     function normalizeRules(rulePack, customRulesRaw) {
         const base = rulePack && rulePack.rules ? rulePack.rules.slice() : [];
@@ -16,38 +43,7 @@
         if (custom.rules && Array.isArray(custom.rules)) {
             return base.concat(custom.rules);
         }
-        return base.concat(legacyRulesToNew(custom));
-    }
-
-    function legacyRulesToNew(legacy) {
-        if (!legacy || !legacy.AACR2) return [];
-        const rules = [];
-        Object.keys(legacy.AACR2).forEach(key => {
-            const spec = legacy.AACR2[key] || {};
-            const match = key.match(/^(\d{3})([a-z0-9])$/i);
-            if (!match) return;
-            rules.push({
-                id: `CUSTOM_${match[1]}${match[2]}`,
-                tag: match[1],
-                subfields: [match[2]],
-                severity: 'WARNING',
-                rationale: 'Custom punctuation rule (legacy format).',
-                checks: [{
-                    type: 'punctuation',
-                    prefix: spec.prefix || '',
-                    suffix: spec.suffix || '',
-                    suffix_mode: 'always',
-                    severity: 'WARNING',
-                    message: 'Apply custom AACR2 punctuation.'
-                }],
-                fixes: [{
-                    label: 'Apply custom punctuation',
-                    patch: [{ op: 'replace_subfield', value_template: '{{expected}}' }]
-                }],
-                examples: [{ before: '', after: '' }]
-            });
-        });
-        return rules;
+        return base;
     }
 
     function indicatorMatch(value, ruleValue) {
@@ -59,41 +55,71 @@
 
     function ruleMatches(rule, tag, subfield, ind1, ind2) {
         if (rule.tag && rule.tag !== tag) return false;
-        if (rule.tag_pattern && !(new RegExp(rule.tag_pattern).test(tag))) return false;
+        if (rule.tag_pattern) {
+            const regex = safeRegExp(rule.tag_pattern, `Rule ${rule.id || 'unknown'} tag_pattern`);
+            if (!regex || !regex.test(tag)) return false;
+        }
         if (!indicatorMatch(ind1 || '', rule.ind1)) return false;
         if (!indicatorMatch(ind2 || '', rule.ind2)) return false;
         if (rule.subfields && Array.isArray(rule.subfields)) {
             return rule.subfields.map(code => code.toLowerCase()).includes(subfield.toLowerCase());
         }
         if (rule.subfield_pattern) {
-            return new RegExp(rule.subfield_pattern).test(subfield);
+            const regex = safeRegExp(rule.subfield_pattern, `Rule ${rule.id || 'unknown'} subfield_pattern`);
+            if (!regex) return false;
+            return regex.test(subfield);
         }
         return true;
     }
 
-    function resolveSuffix(check, field, code) {
+    function normalizeOccurrence(value) {
+        if (value === undefined || value === null || value === '') return 0;
+        const parsed = Number.parseInt(value, 10);
+        return Number.isNaN(parsed) ? 0 : parsed;
+    }
+
+    function resolveSuffix(check, field, code, index) {
         const mode = check.suffix_mode || 'always';
         const following = check.when_following_subfields || [];
         let hasFollowing = false;
+        let prefixOverride = '';
         if (Array.isArray(following) && field && Array.isArray(field.subfields)) {
-            field.subfields.forEach(sub => {
-                if (!sub || !sub.code || !sub.value) return;
-                if (sub.code.toLowerCase() === code.toLowerCase()) return;
-                if (following.map(x => x.toLowerCase()).includes(sub.code.toLowerCase())) {
+            const wanted = following.map(x => x.toLowerCase());
+            const startIndex = typeof index === 'number' ? index + 1 : 0;
+            for (let i = startIndex; i < field.subfields.length; i++) {
+                const sub = field.subfields[i];
+                if (!sub || !sub.code || !sub.value) continue;
+                if (startIndex === 0 && sub.code.toLowerCase() === code.toLowerCase()) continue;
+                if (wanted.includes(sub.code.toLowerCase())) {
                     hasFollowing = true;
+                    if (!prefixOverride && Array.isArray(check.suffix_if_following_prefixes)) {
+                        const trimmedValue = String(sub.value || '').trim();
+                        check.suffix_if_following_prefixes.some(entry => {
+                            if (!entry || !entry.prefix) return false;
+                            const prefix = String(entry.prefix).trim();
+                            if (!prefix) return false;
+                            if (trimmedValue.startsWith(prefix)) {
+                                prefixOverride = entry.suffix || '';
+                                return true;
+                            }
+                            return false;
+                        });
+                    }
+                    break;
                 }
-            });
+            }
         }
         if (mode === 'conditional_following') {
-            return hasFollowing ? (check.suffix_if_following || '') : (check.suffix_if_last || check.suffix || '');
+            const followingSuffix = prefixOverride || check.suffix_if_following || '';
+            return { suffix: hasFollowing ? followingSuffix : (check.suffix_if_last || check.suffix || ''), hasFollowing, mode };
         }
         if (mode === 'when_following') {
-            return hasFollowing ? (check.suffix_if_following || check.suffix || '') : '';
+            return { suffix: hasFollowing ? (check.suffix_if_following || check.suffix || '') : '', hasFollowing, mode };
         }
         if (mode === 'when_last') {
-            return hasFollowing ? '' : (check.suffix_if_last || check.suffix || '');
+            return { suffix: hasFollowing ? '' : (check.suffix_if_last || check.suffix || ''), hasFollowing, mode };
         }
-        return check.suffix || '';
+        return { suffix: check.suffix || '', hasFollowing, mode };
     }
 
     function resolvePrefix(check, field, subfield) {
@@ -124,13 +150,153 @@
         return check.prefix || '';
     }
 
-    function expectedValue(check, field, subfield) {
+    function endsWithAny(value, endings) {
+        if (!value || !Array.isArray(endings)) return false;
+        return endings.some(end => end && value.endsWith(end));
+    }
+
+    function stripEndings(value, endings) {
+        if (!value || !Array.isArray(endings)) return value || '';
+        let text = value;
+        endings.forEach(end => {
+            if (!end) return;
+            if (text.endsWith(end)) {
+                text = text.slice(0, text.length - end.length);
+            }
+        });
+        return text;
+    }
+
+    function normalizePunctuation(value) {
+        let text = value || '';
+        text = text.replace(/\s+([,!?\.\)])/g, '$1');
+        text = text.replace(/([,;:])\s*([^\s\]\)\}])/g, '$1 $2');
+        text = text.replace(/([^:])\/{2,}/g, '$1/');
+        text = text.replace(/([:;\/])\1+/g, '$1');
+        return text;
+    }
+
+    function escapeRegExp(value) {
+        return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    function stripPrefixes(value, prefixes) {
+        if (!value || !Array.isArray(prefixes)) return value || '';
+        let text = value;
+        prefixes.forEach(prefix => {
+            if (!prefix) return;
+            const trimmed = String(prefix).trim();
+            if (!trimmed) return;
+            const regex = new RegExp(`^\\s*${escapeRegExp(trimmed)}\\s*`);
+            if (regex.test(text)) {
+                text = text.replace(regex, '');
+            }
+        });
+        return text;
+    }
+
+    function fieldHasSubfield(field, code) {
+        if (!field || !Array.isArray(field.subfields)) return false;
+        return field.subfields.some(sub => sub && sub.code && sub.value && sub.code.toLowerCase() === code.toLowerCase());
+    }
+
+    function nextSubfieldCode(field, index) {
+        if (!field || !Array.isArray(field.subfields)) return '';
+        for (let i = index + 1; i < field.subfields.length; i++) {
+            const sub = field.subfields[i];
+            if (sub && sub.code) return sub.code;
+        }
+        return '';
+    }
+
+    function previousSubfieldCode(field, index) {
+        if (!field || !Array.isArray(field.subfields)) return '';
+        for (let i = index - 1; i >= 0; i--) {
+            const sub = field.subfields[i];
+            if (sub && sub.code) return sub.code;
+        }
+        return '';
+    }
+
+    function repeatPolicyAllows(field, subfield, index, policy) {
+        const mode = policy || 'all';
+        if (mode === 'all') return true;
+        const code = (subfield.code || '').toLowerCase();
+        const indices = (field.subfields || [])
+            .map((sub, idx) => (sub && sub.code && sub.code.toLowerCase() === code ? idx : -1))
+            .filter(idx => idx >= 0);
+        if (!indices.length) return true;
+        if (mode === 'first_only') return index === indices[0];
+        if (mode === 'last_only') return index === indices[indices.length - 1];
+        return true;
+    }
+
+    function ruleApplies(rule, field, subfield, index) {
+        if (!ruleMatches(rule, field.tag, subfield.code, field.ind1, field.ind2)) return false;
+        if (Array.isArray(rule.requires_subfields)) {
+            for (const code of rule.requires_subfields) {
+                if (!fieldHasSubfield(field, code)) return false;
+            }
+        }
+        if (Array.isArray(rule.forbids_subfields)) {
+            for (const code of rule.forbids_subfields) {
+                if (fieldHasSubfield(field, code)) return false;
+            }
+        }
+        if (rule.next_subfield_is) {
+            const allowed = Array.isArray(rule.next_subfield_is) ? rule.next_subfield_is : [rule.next_subfield_is];
+            const next = nextSubfieldCode(field, index);
+            if (!allowed.map(x => x.toLowerCase()).includes((next || '').toLowerCase())) return false;
+        }
+        if (rule.previous_subfield_is) {
+            const allowed = Array.isArray(rule.previous_subfield_is) ? rule.previous_subfield_is : [rule.previous_subfield_is];
+            const prev = previousSubfieldCode(field, index);
+            if (!allowed.map(x => x.toLowerCase()).includes((prev || '').toLowerCase())) return false;
+        }
+        if (!repeatPolicyAllows(field, subfield, index, rule.repeat_policy)) return false;
+        return true;
+    }
+
+    function expectedValue(check, field, subfield, index) {
         let value = subfield.value || '';
+        if (check.replace_ellipses_with_dash) {
+            value = value.replace(/\.\s*\.\s*\./g, '-');
+            value = value.replace(/\.{3,}/g, '-');
+        }
+        if (check.replace_square_brackets_with_parentheses) {
+            value = value.replace(/\[/g, '(').replace(/\]/g, ')');
+        }
+        if (Array.isArray(check.strip_prefixes)) {
+            value = stripPrefixes(value, check.strip_prefixes);
+        }
+        if (Array.isArray(check.end_not_in)) {
+            value = stripEndings(value, check.end_not_in);
+        }
         if (check.case_mode) {
             value = applyCaseMode(value, check.case_mode);
         }
-        const prefix = resolvePrefix(check, field, subfield);
-        const suffix = resolveSuffix(check, field, subfield.code);
+        let prefix = resolvePrefix(check, field, subfield);
+        const suffixInfo = resolveSuffix(check, field, subfield.code, index);
+        let suffix = suffixInfo.suffix;
+        const condition = (suffixInfo.mode !== 'always' && Array.isArray(check.when_following_subfields))
+            ? {
+                type: 'conditional_suffix',
+                mode: suffixInfo.mode,
+                has_following: suffixInfo.hasFollowing,
+                following_subfields: check.when_following_subfields.slice()
+            }
+            : null;
+        const shouldTrimFollowing = suffixInfo.hasFollowing
+            && suffixInfo.mode !== 'always'
+            && check.trim_trailing_punct !== false;
+        const trimmed = value.trim();
+        if (check.parallel_prefix && trimmed.startsWith('=')) {
+            prefix = check.parallel_prefix;
+            value = value.replace(/^\s*=\s*/, '');
+        }
+        if (Array.isArray(check.end_in) && endsWithAny(value, check.end_in)) {
+            suffix = '';
+        }
         let expected = value.replace(/\s+$/, '');
         if (prefix) {
             const prefixTrim = prefix.replace(/^\s+/, '');
@@ -145,6 +311,16 @@
                 expected = expected.replace(prefixCore, prefix);
             }
         }
+        let trimmedByFollowing = false;
+        if (!suffix && shouldTrimFollowing) {
+            const beforeTrim = expected;
+            expected = expected.replace(/[\s.,;:!?]+$/, '');
+            trimmedByFollowing = expected !== beforeTrim;
+            if (trimmedByFollowing && condition) {
+                condition.action = 'trim';
+            }
+        }
+        let appliedSuffix = false;
         if (suffix) {
             const expectedTrim = expected.replace(/\s+$/, '');
             const suffixTrim = suffix.replace(/\s+$/, '');
@@ -153,7 +329,7 @@
                 if (/\s$/.test(suffix) && !/\s$/.test(expected)) {
                     expected += ' ';
                 }
-                return expected;
+                return { expected, condition };
             }
         }
         if (suffix && !expected.endsWith(suffix)) {
@@ -165,8 +341,15 @@
                 expected = expected.replace(/[\s.,;:!?]+$/, '');
             }
             expected += suffixToAdd;
+            appliedSuffix = true;
         }
-        return expected;
+        if (check.normalize_punctuation) {
+            expected = normalizePunctuation(expected);
+        }
+        if (condition && !condition.action && appliedSuffix) {
+            condition.action = 'add';
+        }
+        return { expected, condition };
     }
 
     function applyCaseMode(value, mode) {
@@ -232,20 +415,26 @@
         return `${leading}${core.charAt(0).toUpperCase()}${core.slice(1).toLowerCase()}${trailing}`;
     }
 
-    function applyCheck(rule, check, field, subfield) {
+    function applyCheck(rule, check, field, subfield, index) {
         const value = (subfield.value || '').toString();
         if (!value.trim()) return null;
         let expected = value;
+        let condition = null;
         if (check.type === 'punctuation') {
-            expected = expectedValue(check, field, subfield);
+            const result = expectedValue(check, field, subfield, index);
+            expected = result.expected;
+            condition = result.condition;
         } else if (check.type === 'separator') {
             const sep = check.separator || ' -- ';
             expected = expected.replace(/[.,;:!?]+\s*$/, '');
             if (!expected.endsWith(sep)) expected += sep;
+            if (check.normalize_punctuation) expected = normalizePunctuation(expected);
         } else if (check.type === 'no_terminal_punctuation') {
             expected = expected.replace(/[.,;:!?]+\s*$/, '');
         } else if (check.type === 'spacing') {
             expected = expected.replace(/\s{2,}/g, ' ');
+        } else if (check.type === 'normalize_punctuation') {
+            expected = normalizePunctuation(expected);
         } else if (check.type === 'fixed_field') {
             return null;
         }
@@ -257,9 +446,10 @@
             rationale: rule.rationale || '',
             tag: field.tag,
             subfield: subfield.code,
-            occurrence: field.occurrence || '',
+            occurrence: normalizeOccurrence(field.occurrence),
             current_value: value,
             expected_value: expected,
+            condition,
             examples: rule.examples || [],
             proposed_fixes: [{
                 label: (rule.fixes && rule.fixes[0] && rule.fixes[0].label) || 'Apply AACR2 punctuation',
@@ -282,13 +472,13 @@
     function validateField(field, settings, rules) {
         const findings = [];
         const matchedRuleIds = new Set();
-        field.subfields.forEach(sub => {
+        field.subfields.forEach((sub, index) => {
             if (!sub || !sub.code) return;
-            const matched = filterMatchedRules(rules.filter(rule => ruleMatches(rule, field.tag, sub.code, field.ind1, field.ind2)));
+            const matched = filterMatchedRules(rules.filter(rule => ruleApplies(rule, field, sub, index)));
             matched.forEach(rule => matchedRuleIds.add(rule.id));
             matched.forEach(rule => {
                 (rule.checks || []).forEach(check => {
-                    const finding = applyCheck(rule, check, field, sub);
+                    const finding = applyCheck(rule, check, field, sub, index);
                     if (finding) findings.push(finding);
                 });
             });
@@ -305,8 +495,8 @@
     function validateRecord(record, settings, rules, strictCoverage) {
         const findings = [];
         record.fields.forEach(field => {
-            field.subfields.forEach(sub => {
-                const matched = filterMatchedRules(rules.filter(rule => ruleMatches(rule, field.tag, sub.code, field.ind1, field.ind2)));
+            field.subfields.forEach((sub, index) => {
+                const matched = filterMatchedRules(rules.filter(rule => ruleApplies(rule, field, sub, index)));
                 if (!matched.length && strictCoverage) {
                     findings.push({
                         severity: 'INFO',
@@ -315,12 +505,13 @@
                         rationale: 'Strict coverage mode is enabled.',
                         tag: field.tag,
                         subfield: sub.code,
+                        occurrence: normalizeOccurrence(field.occurrence),
                         proposed_fixes: []
                     });
                 }
                 matched.forEach(rule => {
                     (rule.checks || []).forEach(check => {
-                        const finding = applyCheck(rule, check, field, sub);
+                        const finding = applyCheck(rule, check, field, sub, index);
                         if (finding) findings.push(finding);
                     });
                 });
@@ -338,6 +529,9 @@
         validateField,
         validateRecord,
         isFieldCovered,
-        DEFAULT_RULES
+        DEFAULT_RULES,
+        getWarnings: () => Array.from(ruleWarnings),
+        clearWarnings: () => ruleWarnings.clear(),
+        onWarning: null
     };
 })(window);
