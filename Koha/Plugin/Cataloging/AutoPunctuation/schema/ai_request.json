@@ -13,6 +13,7 @@
         "ind1": { "type": "string", "maxLength": 1 },
         "ind2": { "type": "string", "maxLength": 1 },
         "occurrence": { "type": "number" },
+        "active_subfield": { "type": "string", "maxLength": 1 },
         "subfields": {
           "type": "array",
           "maxItems": 20,

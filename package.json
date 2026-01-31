@@ -9,7 +9,7 @@
   },
   "homepage": "https://github.com/Dzechy/Koha_AACR2_Assistant_Plugin#readme",
   "scripts": {
-    "test": "node tests/rules_engine.test.js && node tests/ui_helpers.test.js"
+    "test": "node tests/rules_engine.test.js && node tests/ui_helpers.test.js && node tests/security.test.js"
   },
   "repository": {
     "type": "git",

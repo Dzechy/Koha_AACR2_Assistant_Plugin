@@ -109,7 +109,7 @@
                 throw new Error(message);
             }
             console.error(`[AACR2 Assistant] ${message}`);
-            return pluginPath;
+            return '';
         }
         return `${pluginPath}&method=${encodeURIComponent(methodName)}`;
     }
@@ -138,9 +138,34 @@
         if (!state) return null;
         if (!state.aiRequests) state.aiRequests = {};
         if (!state.aiRequests[context]) {
-            state.aiRequests[context] = { id: 0, inFlight: false, status: '', statusType: 'info' };
+            state.aiRequests[context] = { id: 0, inFlight: false, status: '', statusType: 'info', controller: null };
         }
         return state.aiRequests[context];
+    }
+
+    function createAbortController() {
+        if (typeof AbortController === 'undefined') return null;
+        return new AbortController();
+    }
+
+    function cancelAiRequest(state, context, reason, silent) {
+        const req = getAiRequestState(state, context);
+        if (!req || !req.inFlight) return false;
+        if (req.controller && typeof req.controller.abort === 'function') {
+            try {
+                req.controller.abort();
+            } catch (err) {
+                // ignore abort errors
+            }
+        }
+        req.inFlight = false;
+        req.controller = null;
+        if (!silent) {
+            const message = reason || 'Cancelled.';
+            setAiRequestStatus(state, context, message, 'warning');
+        }
+        updateAiCancelButtonState(state);
+        return true;
     }
 
     function isLatestAiRequest(state, context, requestId) {
@@ -151,12 +176,17 @@
     function startAiRequest(state, context) {
         if (!state) return 0;
         const req = getAiRequestState(state, context);
+        if (req && req.inFlight) {
+            cancelAiRequest(state, context, null, true);
+        }
         const nextId = (state.aiRequestCounter || 0) + 1;
         state.aiRequestCounter = nextId;
         if (req) {
             req.id = nextId;
             req.inFlight = true;
+            req.controller = createAbortController();
         }
+        updateAiCancelButtonState(state);
         return nextId;
     }
 
@@ -164,7 +194,21 @@
         const req = getAiRequestState(state, context);
         if (!req || req.id !== requestId) return false;
         req.inFlight = false;
+        req.controller = null;
+        updateAiCancelButtonState(state);
         return true;
+    }
+
+    function getAiRequestSignal(state, context, requestId) {
+        const req = getAiRequestState(state, context);
+        if (!req || req.id !== requestId) return null;
+        return req.controller ? req.controller.signal : null;
+    }
+
+    function isAbortError(err) {
+        if (!err) return false;
+        if (err.name === 'AbortError') return true;
+        return String(err.message || '').toLowerCase().includes('aborted');
     }
 
     function setAiRequestStatus(state, context, message, type) {
@@ -172,6 +216,18 @@
         if (!req) return;
         req.status = message || '';
         req.statusType = type || 'info';
+    }
+
+    function updateAiCancelButtonState(state) {
+        const $panel = $('#aacr2-ai-panel');
+        if (!$panel.length) return;
+        const punctuation = getAiRequestState(state, 'punctuation');
+        const cataloging = getAiRequestState(state, 'cataloging');
+        const inFlight = (punctuation && punctuation.inFlight) || (cataloging && cataloging.inFlight);
+        const $cancel = $panel.find('#aacr2-ai-panel-cancel');
+        if ($cancel.length) {
+            $cancel.prop('disabled', !inFlight);
+        }
     }
 
     function applyStoredAiStatus($panel, state) {
@@ -225,7 +281,7 @@
             .aacr2-raw-wrapper { margin-top: 6px; }
             .aacr2-raw-output { display: none; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 6px; font-size: 11px; max-height: 140px; overflow: auto; white-space: pre-wrap; }
             .aacr2-ai-panel { position: fixed; right: 24px; bottom: 24px; width: 380px; background: #ffffff; border: 1px solid #d1d9e0; box-shadow: 0 10px 25px rgba(15, 23, 42, 0.2); border-radius: 6px; z-index: 10002; display: flex; flex-direction: column; resize: both; overflow: auto; min-width: 300px; min-height: 200px; }
-            .aacr2-ai-panel header { display: flex; justify-content: space-between; align-items: center; cursor: move; padding: 8px 10px; background: #1f2937; color: #fff; font-weight: 700; }
+            .aacr2-ai-panel header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; cursor: move; padding: 8px 10px; background: #1f2937; color: #fff; font-weight: 700; }
             .aacr2-ai-panel .body { padding: 10px 12px; font-size: 12px; }
             .aacr2-ai-panel.minimized { min-height: 0; height: auto; resize: none; overflow: hidden; }
             .aacr2-ai-panel.minimized .body { display: none; }
@@ -2170,13 +2226,14 @@
                         <div>
                             <button type="button" class="btn btn-xs btn-default" id="aacr2-ai-panel-minimize">Minimize</button>
                             <button type="button" class="btn btn-xs btn-default" id="aacr2-ai-panel-refresh">Refresh</button>
+                            <button type="button" class="btn btn-xs btn-warning" id="aacr2-ai-panel-cancel" disabled>Cancel</button>
                             <button type="button" class="btn btn-xs btn-default" id="aacr2-ai-panel-close">Close</button>
                         </div>
                     </header>
                     <div class="body">
                         <div class="aacr2-ai-section">
                             <div class="aacr2-ai-section-title">Cataloging Suggestions</div>
-                            <div class="meta">Title source (245$a + $b + $c; b/c optional): <strong id="aacr2-ai-title">None</strong></div>
+                            <div class="meta">Title source (245$a + optional $n/$p/$b/$c): <strong id="aacr2-ai-title">None</strong></div>
                             <div class="meta">Cutter source: <span id="aacr2-ai-cutter-source">Title</span></div>
                             <div class="options">
                                 <label><input type="checkbox" id="aacr2-ai-opt-classification"> Classification number</label>
@@ -2264,6 +2321,12 @@
                 updateAiPanelSelection($panel, settings, state);
                 updateAiCatalogingContext($panel, settings, state);
             });
+            $panel.find('#aacr2-ai-panel-cancel').on('click', () => {
+                const cancelledPunct = cancelAiRequest(state, 'punctuation', 'Cancelled.', false);
+                const cancelledCatalog = cancelAiRequest(state, 'cataloging', 'Cancelled.', false);
+                if (cancelledPunct) updateAiPanelStatus($panel, 'Cancelled.', 'warning');
+                if (cancelledCatalog) updateAiCatalogingStatus($panel, 'Cancelled.', 'warning');
+            });
             $panel.find('#aacr2-ai-panel-run').on('click', async function() {
                 const $button = $(this);
                 const selection = updateAiPanelSelection($panel, settings, state);
@@ -2320,7 +2383,11 @@
                     call_number_guidance: false
                 };
                 const orderedContext = prioritizeSubfield(fieldContext, meta.code);
-                const tagContext = { ...orderedContext, occurrence: normalizeOccurrence(fieldContext.occurrence) };
+                const tagContext = {
+                    ...orderedContext,
+                    occurrence: normalizeOccurrence(fieldContext.occurrence),
+                    active_subfield: meta.code
+                };
                 const payload = {
                     request_id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
                     tag_context: redactTagContext(tagContext, settings, state),
@@ -2413,6 +2480,7 @@
         updateAiPanelSelection($panel, settings, state);
         updateAiCatalogingContext($panel, settings, state);
         applyStoredAiStatus($panel, state);
+        updateAiCancelButtonState(state);
         $panel.show();
         if (state) state.aiPanelOpen = true;
         updateAiToggleButton();
@@ -2463,7 +2531,11 @@
             return;
         }
         const orderedContext = prioritizeSubfield(fieldContext, meta.code);
-        const tagContext = { ...orderedContext, occurrence: normalizeOccurrence(fieldContext.occurrence) };
+        const tagContext = {
+            ...orderedContext,
+            occurrence: normalizeOccurrence(fieldContext.occurrence),
+            active_subfield: meta.code
+        };
         if (!global.AACR2RulesEngine.isFieldCovered(meta.tag, meta.code, fieldContext.ind1 || '', fieldContext.ind2 || '', state.rules)) {
             const message = 'No AACR2 rule defined for this field; AI assistance disabled.';
             toast('warning', message);
@@ -2485,6 +2557,7 @@
             payload.record_context = recordContext;
         }
         const requestId = startAiRequest(state, 'punctuation');
+        const signal = getAiRequestSignal(state, 'punctuation', requestId);
         const setStatus = (message, type) => {
             if (!isLatestAiRequest(state, 'punctuation', requestId)) return;
             setAiRequestStatus(state, 'punctuation', message, type);
@@ -2494,7 +2567,7 @@
         toast('info', startMessage);
         setStatus(startMessage, 'info');
         try {
-            const result = await global.AACR2ApiClient.aiSuggest(settings.pluginPath, payload);
+            const result = await global.AACR2ApiClient.aiSuggest(settings.pluginPath, payload, { signal });
             if (!isLatestAiRequest(state, 'punctuation', requestId)) return;
             if (result.error) {
                 toast('error', result.error);
@@ -2515,6 +2588,11 @@
             }
         } catch (err) {
             if (!isLatestAiRequest(state, 'punctuation', requestId)) return;
+            if (isAbortError(err)) {
+                const message = 'Cancelled.';
+                setStatus(message, 'warning');
+                return;
+            }
             const message = `AI suggestions unavailable: ${err.message}`;
             toast('error', message);
             setStatus(`Error: ${err.message}`, 'error');
@@ -2572,6 +2650,7 @@
             features
         };
         const requestId = startAiRequest(state, 'cataloging');
+        const signal = getAiRequestSignal(state, 'cataloging', requestId);
         const setStatus = (message, type) => {
             if (!isLatestAiRequest(state, 'cataloging', requestId)) return;
             setAiRequestStatus(state, 'cataloging', message, type);
@@ -2581,7 +2660,7 @@
         toast('info', startMessage);
         setStatus(startMessage, 'info');
         try {
-            const result = await global.AACR2ApiClient.aiSuggest(settings.pluginPath, payload);
+            const result = await global.AACR2ApiClient.aiSuggest(settings.pluginPath, payload, { signal });
             if (!isLatestAiRequest(state, 'cataloging', requestId)) return;
             if (result.error) {
                 toast('error', result.error);
@@ -2643,6 +2722,11 @@
             }
         } catch (err) {
             if (!isLatestAiRequest(state, 'cataloging', requestId)) return;
+            if (isAbortError(err)) {
+                const message = 'Cancelled.';
+                setStatus(message, 'warning');
+                return;
+            }
             const message = `AI cataloging suggestions unavailable: ${err.message}`;
             toast('error', message);
             setStatus(`Error: ${err.message}`, 'error');
@@ -3062,30 +3146,101 @@
         };
     }
 
-    function filterCatalogingSubfields(subfields) {
-        const ordered = ['a', 'b', 'c'];
-        const values = {};
+    function filterCatalogingSubfields(subfields, options) {
+        const opts = options || {};
+        const maxSubfields = Number.isFinite(opts.maxSubfields) ? opts.maxSubfields : 20;
+        const maxChars = Number.isFinite(opts.maxChars) ? opts.maxChars : 1200;
+        const maxValueChars = Number.isFinite(opts.maxValueChars) ? opts.maxValueChars : 240;
+        const requiredCodes = Array.isArray(opts.requiredCodes)
+            ? opts.requiredCodes.map(code => String(code || '').toLowerCase()).filter(Boolean)
+            : ['a', 'b', 'c'];
+        const activeCode = String(opts.activeCode || '').toLowerCase();
+
+        const cleaned = [];
         (subfields || []).forEach(sub => {
             if (!sub || typeof sub !== 'object') return;
-            const code = (sub.code || '').toLowerCase();
-            if (!ordered.includes(code) || values[code] !== undefined) return;
-            const value = (sub.value || '').toString().trim();
+            const code = String(sub.code || '').toLowerCase();
+            if (!code) return;
+            let value = (sub.value !== undefined && sub.value !== null) ? String(sub.value) : '';
+            value = value.trim();
             if (!value) return;
-            values[code] = value;
+            cleaned.push({ code, value });
         });
-        return ordered
-            .filter(code => values[code] !== undefined)
-            .map(code => ({ code, value: values[code] }));
+        if (!cleaned.length) return [];
+
+        const normalizeValue = (value) => {
+            if (!value) return '';
+            if (maxValueChars && value.length > maxValueChars) {
+                return value.slice(0, Math.max(0, maxValueChars - 3)) + '...';
+            }
+            return value;
+        };
+
+        const totalChars = cleaned.reduce((sum, sub) => sum + sub.value.length, 0);
+        if ((!maxSubfields || cleaned.length <= maxSubfields) && (!maxChars || totalChars <= maxChars)) {
+            return cleaned.map(sub => ({ code: sub.code, value: normalizeValue(sub.value) }));
+        }
+
+        let centerIndex = 0;
+        if (activeCode) {
+            const idx = cleaned.findIndex(sub => sub.code === activeCode);
+            if (idx >= 0) centerIndex = idx;
+        }
+
+        const selected = new Set();
+        cleaned.forEach((sub, idx) => {
+            if ((activeCode && sub.code === activeCode) || requiredCodes.includes(sub.code)) {
+                selected.add(idx);
+            }
+        });
+        if (!selected.size) selected.add(centerIndex);
+
+        let offset = 1;
+        while (selected.size < maxSubfields && (centerIndex - offset >= 0 || centerIndex + offset < cleaned.length)) {
+            const left = centerIndex - offset;
+            if (left >= 0) selected.add(left);
+            if (selected.size >= maxSubfields) break;
+            const right = centerIndex + offset;
+            if (right < cleaned.length) selected.add(right);
+            offset += 1;
+        }
+
+        const indices = Array.from(selected).sort((a, b) => a - b).slice(0, maxSubfields);
+        const result = [];
+        let total = 0;
+        indices.forEach(idx => {
+            let value = normalizeValue(cleaned[idx].value);
+            if (!value) return;
+            if (maxChars && total + value.length > maxChars) {
+                const remaining = maxChars - total;
+                if (remaining <= 3) return;
+                value = value.slice(0, Math.max(0, remaining - 3)) + '...';
+            }
+            total += value.length;
+            result.push({ code: cleaned[idx].code, value });
+        });
+        return result;
     }
 
     function buildCatalogingTagContext(fieldContext) {
         if (!fieldContext) return null;
+        const rawSubfields = Array.isArray(fieldContext.subfields) ? fieldContext.subfields : [];
+        let activeCode = '';
+        const firstA = rawSubfields.find(sub => sub && String(sub.code || '').toLowerCase() === 'a');
+        if (firstA) {
+            activeCode = 'a';
+        } else if (rawSubfields.length) {
+            activeCode = String(rawSubfields[0].code || '').toLowerCase();
+        }
+        const subfields = filterCatalogingSubfields(rawSubfields, { activeCode });
+        const activeSubfield = activeCode || (subfields[0] ? subfields[0].code : '');
         return {
             tag: fieldContext.tag || '245',
             ind1: fieldContext.ind1 || '',
             ind2: fieldContext.ind2 || '',
             occurrence: normalizeOccurrence(fieldContext.occurrence),
-            subfields: filterCatalogingSubfields(fieldContext.subfields || [])
+            active_subfield: activeSubfield,
+            subfields
         };
     }
 
@@ -4229,39 +4384,58 @@
 
     function sendGuideProgressUpdate(progress, settings, summary) {
         if (!settings || !settings.pluginPath) return;
-        const state = global.AACR2IntellisenseState;
-        const userContext = (state && state.userContext) ? state.userContext : getUserContext(settings);
-        const fallbackUser = settings && settings.currentUserId ? String(settings.currentUserId).trim() : '';
-        const user = fallbackUser || (userContext && userContext.user ? userContext.user : '');
+        const completed = Object.keys(progress.completed || {});
+        const skipped = Object.keys(progress.skipped || {});
+        const summaryCounts = (() => {
+            const completedCount = completed.length;
+            const skippedCount = skipped.length;
+            let total = completedCount + skippedCount;
+            if (summary && typeof summary === 'object') {
+                const explicitTotal = summary.steps_total || summary.total || summary.stepsTotal;
+                if (Number.isFinite(explicitTotal)) total = explicitTotal;
+            }
+            return {
+                completed_count: completedCount,
+                skipped_count: skippedCount,
+                total
+            };
+        })();
         const payload = {
-            user,
-            userid: fallbackUser || '',
             signature: progress.signature || '',
-            completed: Object.keys(progress.completed || {}),
-            skipped: Object.keys(progress.skipped || {}),
-            summary: summary || {},
-            csrf_token: settings.csrfToken || ''
+            completed,
+            skipped,
+            summary_counts: summaryCounts
         };
         const url = buildPluginUrl(settings, 'guide_progress_update');
         if (!url) return;
+        const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+        const csrfToken = csrfMeta ? (csrfMeta.getAttribute('content') || '') : '';
+        payload.csrf_token = csrfToken;
+        const params = new URLSearchParams();
+        params.set('payload', JSON.stringify(payload));
+        if (csrfToken) params.set('csrf_token', csrfToken);
+        const body = params.toString();
+        if (navigator.sendBeacon) {
+            const blob = new Blob([body], { type: 'application/x-www-form-urlencoded; charset=UTF-8' });
+            const sent = navigator.sendBeacon(url, blob);
+            if (sent) return;
+        }
         fetch(url, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json',
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
                 'Accept': 'application/json'
             },
             credentials: 'include',
-            body: JSON.stringify(payload)
+            body
         })
             .then(async resp => {
-                const contentType = (resp.headers.get('content-type') || '').toLowerCase();
-                let data = null;
-                let bodyText = '';
-                if (!resp.ok) {
-                    let message = (resp.status === 401 || resp.status === 403)
-                        ? 'Session expired. Please refresh and log in again.'
-                        : '';
-                    if (contentType.includes('application/json')) {
+                try {
+                    const contentType = (resp.headers.get('content-type') || '').toLowerCase();
+                    const isJson = contentType.includes('application/json');
+                    let data = null;
+                    let bodyText = '';
+                    if (isJson) {
                         try {
                             data = await resp.json();
                         } catch (err) {
@@ -4278,37 +4452,35 @@
                             bodyText = '';
                         }
                     }
-                    if (!message) {
-                        message = (data && data.error) ? data.error : sanitizeServerMessage(bodyText);
+
+                    if (!isJson) {
+                        const snippet = (bodyText || '').toString().slice(0, 300);
+                        console.warn('[AACR2 Assistant] Guide progress update non-JSON response:', resp.status, snippet);
                     }
-                    reportProgressUpdateError(settings, resp.status, message || 'Request failed.', bodyText);
-                    return null;
-                }
-                if (contentType.includes('application/json')) {
-                    try {
-                        data = await resp.json();
-                    } catch (err) {
-                        try {
-                            bodyText = await resp.text();
-                        } catch (err2) {
-                            bodyText = '';
+
+                    if (!resp.ok) {
+                        let message = (resp.status === 401 || resp.status === 403)
+                            ? 'Session expired. Please refresh and log in again.'
+                            : '';
+                        if (!message) {
+                            message = (data && data.error) ? data.error : sanitizeServerMessage(bodyText);
                         }
+                        reportProgressUpdateError(settings, resp.status, message || 'Request failed.', bodyText);
+                        return null;
                     }
-                } else {
-                    try {
-                        bodyText = await resp.text();
-                    } catch (err) {
-                        bodyText = '';
+
+                    if (!data) {
+                        reportProgressUpdateError(settings, resp.status, 'Non-JSON response from server.', bodyText);
+                        return null;
                     }
-                }
-                if (!data) {
-                    reportProgressUpdateError(settings, resp.status, 'Non-JSON response from server.', bodyText);
+                    if (data && data.error) {
+                        reportProgressUpdateError(settings, resp.status, data.error, bodyText);
+                    }
+                    return data;
+                } catch (err) {
+                    reportProgressUpdateError(settings, resp.status || 0, err.message || 'Request failed.', '');
                     return null;
                 }
-                if (data && data.error) {
-                    reportProgressUpdateError(settings, resp.status, data.error, bodyText);
-                }
-                return data;
             })
             .catch(err => {
                 reportProgressUpdateError(settings, 0, err.message || 'Request failed.', '');

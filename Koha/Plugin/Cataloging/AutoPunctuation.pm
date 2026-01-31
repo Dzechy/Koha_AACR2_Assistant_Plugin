@@ -6,19 +6,19 @@ use C4::Auth;
 use C4::Context;
 use Koha::DateUtils;
 use Koha::Patrons;
+use Koha::Token;
 use CGI;
 use JSON qw(to_json from_json);
 use Try::Tiny;
 use File::Basename;
 use LWP::UserAgent;
 use HTTP::Request;
-use Digest::SHA qw(sha256_hex sha256);
+use Digest::SHA qw(sha256_hex sha256 sha1_hex);
 use Time::HiRes qw(time usleep);
 use Scalar::Util qw(looks_like_number);
 use MIME::Base64 qw(encode_base64 decode_base64);
 use Crypt::Mode::CBC;
 use Crypt::PRNG;
-use Koha::Token;
 
 our $VERSION = "2.0.0";
 our $PLUGIN_REPO_URL = "https://github.com/Dzechy/Koha_AACR2_Assistant_Plugin/";
@@ -93,7 +93,6 @@ sub configure {
     my $settings = { %{$defaults}, %{$stored_settings} };
     my $saved_successfully = 0;
     my @save_errors;
-    my $csrf_token = $self->_csrf_token();
 
     if ($cgi->param('save')) {
         unless ($self->_csrf_ok()) {
@@ -146,7 +145,7 @@ sub configure {
         $settings->{ai_redact_856_querystrings} = $cgi->param('ai_redact_856_querystrings') ? 1 : 0;
         $settings->{ai_context_mode} = $cgi->param('ai_context_mode') || $settings->{ai_context_mode};
         $settings->{ai_payload_preview} = $cgi->param('ai_payload_preview') ? 1 : 0;
-        $settings->{ai_openrouter_response_format} = $cgi->param('ai_openrouter_response_format') ? 1 : 0;
+        $settings->{ai_openrouter_response_format} = 0;
         $settings->{ai_rate_limit_per_minute} = $cgi->param('ai_rate_limit_per_minute') || $settings->{ai_rate_limit_per_minute};
         $settings->{ai_cache_ttl_seconds} = $cgi->param('ai_cache_ttl_seconds') || $settings->{ai_cache_ttl_seconds};
         $settings->{ai_cache_max_entries} = $cgi->param('ai_cache_max_entries') || $settings->{ai_cache_max_entries};
@@ -158,10 +157,12 @@ sub configure {
         $settings->{ai_circuit_breaker_min_samples} = $cgi->param('ai_circuit_breaker_min_samples') || $settings->{ai_circuit_breaker_min_samples};
         $settings->{ai_confidence_threshold} = defined $cgi->param('ai_confidence_threshold') ? $cgi->param('ai_confidence_threshold') : $settings->{ai_confidence_threshold};
         $settings->{lc_class_target} = $cgi->param('lc_class_target') || $settings->{lc_class_target} || '050$a';
-        my $request_mode = $cgi->param('ai_request_mode') || $settings->{ai_request_mode} || 'direct';
+        my $request_mode = $cgi->param('ai_request_mode') || $settings->{ai_request_mode} || 'server';
         $request_mode = lc($request_mode || '');
-        $request_mode = $request_mode eq 'server' ? 'server' : 'direct';
-        $settings->{ai_request_mode} = $request_mode;
+        if ($request_mode ne 'server') {
+            $self->_debug_log($settings, 'Direct AI request mode is disabled; forcing server mode.');
+        }
+        $settings->{ai_request_mode} = 'server';
         $settings->{llm_api_provider} = $cgi->param('llm_api_provider') || 'OpenRouter';
         my $provider = lc($settings->{llm_api_provider} || 'openrouter');
         my $unified_key = $cgi->param('ai_api_key');
@@ -176,7 +177,7 @@ sub configure {
                     $settings->{$target_key} = $encrypted;
                 } else {
                     my $label = $provider eq 'openrouter' ? 'OpenRouter' : 'OpenAI';
-                    push @save_errors, "Unable to store ${label} API key. Configure a server-side encryption secret.";
+                    push @save_errors, $self->_encryption_error_message();
                 }
             }
         } else {
@@ -189,7 +190,7 @@ sub configure {
                 if (defined $encrypted && $encrypted ne '') {
                     $settings->{llm_api_key} = $encrypted;
                 } else {
-                    push @save_errors, 'Unable to store OpenAI API key. Configure a server-side encryption secret.';
+                    push @save_errors, $self->_encryption_error_message();
                 }
             }
             if ($cgi->param('openrouter_api_key_clear')) {
@@ -199,7 +200,7 @@ sub configure {
                 if (defined $encrypted && $encrypted ne '') {
                     $settings->{openrouter_api_key} = $encrypted;
                 } else {
-                    push @save_errors, 'Unable to store OpenRouter API key. Configure a server-side encryption secret.';
+                    push @save_errors, $self->_encryption_error_message();
                 }
             }
         }
@@ -288,8 +289,24 @@ sub configure {
     $template_settings->{openrouter_api_key} = '';
     my $llm_api_key_set = $self->_secret_present($settings->{llm_api_key});
     my $openrouter_api_key_set = $self->_secret_present($settings->{openrouter_api_key});
+    my $encryption_ready = $self->_encryption_secret() ? 1 : 0;
     my $coverage = $self->_build_coverage_report($settings);
     my $update_info = $self->_check_for_updates();
+    my $csrf_token = '';
+    try {
+        my $session_id = $self->_session_id();
+        if ($session_id) {
+            $csrf_token = Koha::Token->new->generate_csrf({ session_id => $session_id }) || '';
+        }
+    } catch {
+        $csrf_token = '';
+    };
+    my $model_defaults_json = to_json({
+        openai => $settings->{ai_model_openai} || '',
+        openrouter => $settings->{ai_model_openrouter} || '',
+        fallback => $settings->{ai_model} || ''
+    });
+    $model_defaults_json =~ s{</}{<\\/}g;
     $template->param(
         settings => $template_settings,
         users => \@users,
@@ -303,9 +320,11 @@ sub configure {
         current_version => $VERSION,
         llm_api_key_set => $llm_api_key_set,
         openrouter_api_key_set => $openrouter_api_key_set,
+        encryption_ready => $encryption_ready,
         saved_successfully => $saved_successfully,
         save_errors => \@save_errors,
         csrf_token => $csrf_token,
+        model_defaults_json => $model_defaults_json,
         CLASS => ref($self),
         METHOD => 'configure',
     );
@@ -365,29 +384,75 @@ sub _default_settings {
         llm_api_provider => 'OpenRouter',
         llm_api_key => '',
         openrouter_api_key => '',
-        ai_request_mode => 'direct',
+        ai_request_mode => 'server',
         last_updated => '',
     };
 }
 
-sub _csrf_token {
+sub _session_id {
     my ($self) = @_;
     my $cgi = $self->{'cgi'} || CGI->new;
-    my $session_id = scalar $cgi->cookie('CGISESSID');
-    return Koha::Token->new->generate_csrf({ session_id => $session_id }) || '';
+    my $session_id = '';
+    try {
+        if (C4::Auth->can('get_session')) {
+            my $session = C4::Auth::get_session($cgi);
+            if ($session) {
+                $session_id = eval { $session->id } || '';
+                if (!$session_id && $session->can('param')) {
+                    $session_id = $session->param('_session_id') || $session->param('id') || '';
+                }
+            }
+        }
+    } catch {
+        $session_id = '';
+    };
+    $session_id ||= scalar $cgi->cookie('CGISESSID') || '';
+    if (!$session_id) {
+        for my $name ($cgi->cookie) {
+            next unless $name && $name =~ /sess/i;
+            my $value = scalar $cgi->cookie($name);
+            if ($value) {
+                $session_id = $value;
+                last;
+            }
+        }
+    }
+    return $session_id || '';
 }
 
 sub _csrf_ok {
     my ($self, $payload) = @_;
     my $cgi = $self->{'cgi'} || CGI->new;
-    my $token = '';
-    if ($payload && ref $payload eq 'HASH') {
-        $token = $payload->{csrf_token} || '';
+    my $csrf_token = '';
+    if ($payload && ref $payload eq 'HASH' && defined $payload->{csrf_token}) {
+        $csrf_token = $payload->{csrf_token};
     }
-    $token ||= scalar $cgi->param('csrf_token') || '';
-    $token ||= scalar $cgi->http('X-CSRF-Token') || '';
-    my $session_id = scalar $cgi->cookie('CGISESSID');
-    return Koha::Token->new->check_csrf({ session_id => $session_id, token => $token }) ? 1 : 0;
+    if (!$csrf_token) {
+        $csrf_token = $cgi->http('X-CSRF-Token')
+            || $cgi->http('CSRF-TOKEN')
+            || $ENV{HTTP_X_CSRF_TOKEN}
+            || $ENV{HTTP_CSRF_TOKEN}
+            || '';
+    }
+    if (!$csrf_token) {
+        $csrf_token = $cgi->param('csrf_token') || '';
+    }
+    $csrf_token =~ s/^\s+|\s+$//g if defined $csrf_token;
+    return 0 unless $csrf_token;
+
+    my $session_id = $self->_session_id();
+    return 0 unless $session_id;
+
+    my $ok = 0;
+    try {
+        $ok = Koha::Token->new->check_csrf({
+            session_id => $session_id,
+            token      => $csrf_token,
+        }) ? 1 : 0;
+    } catch {
+        $ok = 0;
+    };
+    return $ok;
 }
 
 sub _secret_present {
@@ -415,21 +480,25 @@ sub _koha_encryptor {
 
 sub _encryption_secret {
     my ($self) = @_;
-    return $ENV{KOHA_PLUGIN_SECRET}
-        || $ENV{KOHA_SECRET}
-        || C4::Context->config('encryption_key')
-        || C4::Context->config('pass')
-        || '';
+    my $secret = C4::Context->config('encryption_key') // '';
+    $secret =~ s/^\s+|\s+$//g;
+    return '' unless $secret;
+    return '' if $secret =~ /^(changeme|change_me|replace_me|your_secret_here|set_me|set_this|encryption_key)$/i;
+    return $secret;
+}
+
+sub _encryption_error_message {
+    return 'Koha encryption_key is not configured in koha-conf.xml';
 }
 
 sub _encrypt_secret {
     my ($self, $plaintext) = @_;
     return undef unless defined $plaintext && $plaintext ne '';
+    my $secret = $self->_encryption_secret();
+    return undef unless $secret;
     if (my $crypt = $self->_koha_encryptor()) {
         return 'KOHAENC:' . $crypt->encrypt_hex($plaintext);
     }
-    my $secret = $self->_encryption_secret();
-    return undef unless $secret;
     my $key = sha256($secret);
     my $iv = Crypt::PRNG::random_bytes(12);
     my $gcm;
@@ -453,7 +522,11 @@ sub _encrypt_secret {
 sub _decrypt_secret {
     my ($self, $ciphertext) = @_;
     return '' unless defined $ciphertext && $ciphertext ne '';
+    if ($ciphertext =~ /^PLAINTEXT:(.*)$/s) {
+        return '';
+    }
     if ($ciphertext =~ /^KOHAENC:(.+)$/) {
+        return '' unless $self->_encryption_secret();
         my $crypt = $self->_koha_encryptor();
         return '' unless $crypt;
         my $decoded = $1;
@@ -505,7 +578,7 @@ sub _decrypt_secret {
         };
         return $plaintext // '';
     }
-    return $ciphertext;
+    return '';
 }
 
 sub _obfuscate_secret {
@@ -519,6 +592,17 @@ sub _obfuscate_secret {
 sub _migrate_secret {
     my ($self, $value, $errors) = @_;
     return '' unless defined $value && $value ne '';
+    if ($value =~ /^PLAINTEXT:(.*)$/s) {
+        my $plaintext = $1;
+        unless ($self->_encryption_secret()) {
+            push @{$errors}, $self->_encryption_error_message()
+                if $errors && ref $errors eq 'ARRAY';
+            return $value;
+        }
+        my $encrypted = $self->_encrypt_secret($plaintext);
+        return $encrypted if defined $encrypted && $encrypted ne '' && $encrypted !~ /^PLAINTEXT:/;
+        return $value;
+    }
     if ($self->_secret_is_encrypted($value)) {
         if ($value =~ /^ENCv1:/) {
             my $plaintext = $self->_decrypt_secret($value);
@@ -527,9 +611,14 @@ sub _migrate_secret {
         }
         return $value;
     }
+    unless ($self->_encryption_secret()) {
+        push @{$errors}, $self->_encryption_error_message()
+            if $errors && ref $errors eq 'ARRAY';
+        return $value;
+    }
     my $encrypted = $self->_encrypt_secret($value);
     return $encrypted if defined $encrypted && $encrypted ne '';
-    push @{$errors}, 'Stored API key could not be encrypted; configure a server-side encryption secret.'
+    push @{$errors}, $self->_encryption_error_message()
         if $errors && ref $errors eq 'ARRAY';
     return $value;
 }
@@ -611,7 +700,7 @@ sub _save_model_cache {
 sub _fetch_openai_models {
     my ($self, $settings) = @_;
     my $api_key = $self->_decrypt_secret($settings->{llm_api_key});
-    return { error => 'OpenAI API key not configured.' } unless $api_key;
+    return { models => [], warning => 'OpenAI API key not configured. Add a key to fetch the live model list.' } unless $api_key;
     my $ua = LWP::UserAgent->new(timeout => $settings->{ai_timeout} || 30);
     my $request = HTTP::Request->new(
         'GET',
@@ -640,17 +729,18 @@ sub _fetch_openai_models {
 sub _fetch_openrouter_models {
     my ($self, $settings) = @_;
     my $api_key = $self->_decrypt_secret($settings->{openrouter_api_key});
-    return { error => 'OpenRouter API key not configured.' } unless $api_key;
+    return { models => [], warning => 'OpenRouter API key not configured. Add a key to fetch the live model list.' } unless $api_key;
     my $ua = LWP::UserAgent->new(timeout => $settings->{ai_timeout} || 30);
+    my @headers = (
+        'Content-Type' => 'application/json',
+        'HTTP-Referer' => $PLUGIN_REPO_URL,
+        'X-Title' => 'Koha AACR2 Assistant',
+    );
+    push @headers, ('Authorization' => "Bearer $api_key");
     my $request = HTTP::Request->new(
         'GET',
         'https://openrouter.ai/api/v1/models',
-        [
-            'Authorization' => "Bearer $api_key",
-            'Content-Type' => 'application/json',
-            'HTTP-Referer' => $PLUGIN_REPO_URL,
-            'X-Title' => 'Koha AACR2 Assistant',
-        ]
+        \@headers
     );
     my $response = $ua->request($request);
     return { error => 'OpenRouter model list request failed.' } unless $response->is_success;
@@ -687,7 +777,7 @@ sub _fetch_openrouter_models {
         }
     }
     @models = sort { ($a->{id} || '') cmp ($b->{id} || '') } @models;
-    return { models => \@models };
+    return { models => \@models, warning => ($api_key ? undef : 'OpenRouter API key not configured. Listing public models.') };
 }
 
 sub _compare_versions {
@@ -731,9 +821,43 @@ sub _load_settings {
     return { %{$defaults}, %{$parsed} };
 }
 
+sub _debug_log {
+    my ($self, $settings, $message) = @_;
+    return unless $settings && $settings->{debug_mode};
+    my $text = defined $message ? $message : '';
+    $text =~ s/\s+$//;
+    warn "AutoPunctuation debug: $text";
+}
+
+sub _safe_retrieve_data {
+    my ($self, $key, $settings, $context) = @_;
+    my $value;
+    try {
+        $value = $self->retrieve_data($key);
+    } catch {
+        my $label = $context || $key || 'data';
+        $self->_debug_log($settings, "retrieve_data failed for $label: $_");
+        $value = undef;
+    };
+    return $value;
+}
+
+sub _safe_store_data {
+    my ($self, $data, $settings, $context) = @_;
+    my $ok = 1;
+    try {
+        $self->store_data($data);
+    } catch {
+        my $label = $context || 'data';
+        $self->_debug_log($settings, "store_data failed for $label: $_");
+        $ok = 0;
+    };
+    return $ok;
+}
+
 sub _load_legacy_guide_progress {
-    my ($self) = @_;
-    my $raw = $self->retrieve_data('guide_progress') || '{}';
+    my ($self, $settings) = @_;
+    my $raw = $self->_safe_retrieve_data('guide_progress', $settings, 'legacy guide_progress') || '{}';
     my $data = {};
     try {
         $data = from_json($raw);
@@ -744,19 +868,26 @@ sub _load_legacy_guide_progress {
 }
 
 sub _save_legacy_guide_progress {
-    my ($self, $data) = @_;
-    $self->store_data({ guide_progress => to_json($data || {}) });
+    my ($self, $data, $settings) = @_;
+    $self->_safe_store_data({ guide_progress => to_json($data || {}) }, $settings, 'legacy guide_progress');
 }
 
 sub _guide_progress_key {
-    my ($self, $borrowernumber) = @_;
-    return '' unless defined $borrowernumber && $borrowernumber ne '';
-    return 'guide_progress:' . $borrowernumber;
+    my ($self, $user_key) = @_;
+    return '' unless defined $user_key && $user_key ne '';
+    $user_key =~ s/^\s+|\s+$//g;
+    return '' unless $user_key ne '';
+    return 'guide_progress:' . $user_key;
 }
 
 sub _load_guide_progress_index {
-    my ($self) = @_;
-    my $raw = $self->retrieve_data('guide_progress_index') || '';
+    my ($self, $settings) = @_;
+    my $map = $self->_load_guide_progress_map($settings);
+    if ($map && ref $map eq 'HASH' && %{$map}) {
+        my @list = grep { defined $_ && $_ ne '' } sort keys %{$map};
+        return \@list;
+    }
+    my $raw = $self->_safe_retrieve_data('guide_progress_index', $settings, 'guide_progress_index') || '';
     return [] unless $raw;
     my $data = [];
     try {
@@ -765,31 +896,58 @@ sub _load_guide_progress_index {
         $data = [];
     };
     if (ref $data eq 'ARRAY') {
-        return $data;
+        my @list = grep { defined $_ && $_ ne '' } @{$data};
+        return \@list;
     }
     if (ref $data eq 'HASH') {
         if ($data->{users} && ref $data->{users} eq 'ARRAY') {
-            return $data->{users};
+            my @list = grep { defined $_ && $_ ne '' } @{ $data->{users} };
+            return \@list;
         }
         if ($data->{users} && ref $data->{users} eq 'HASH') {
-            return [ sort keys %{ $data->{users} } ];
+            my @list = grep { defined $_ && $_ ne '' } sort keys %{ $data->{users} };
+            return \@list;
         }
-        return [ sort keys %{$data} ];
+        my @list = grep { defined $_ && $_ ne '' } sort keys %{$data};
+        return \@list;
     }
     return [];
 }
 
 sub _save_guide_progress_index {
-    my ($self, $list) = @_;
+    my ($self, $list, $settings) = @_;
     $list = [] unless $list && ref $list eq 'ARRAY';
-    $self->store_data({ guide_progress_index => to_json($list) });
+    $self->_safe_store_data({ guide_progress_index => to_json($list) }, $settings, 'guide_progress_index');
+}
+
+sub _load_guide_progress_map {
+    my ($self, $settings) = @_;
+    my $raw = $self->_safe_retrieve_data('guide_progress_v2', $settings, 'guide_progress_v2') || '{}';
+    my $data = {};
+    try {
+        $data = from_json($raw);
+    } catch {
+        $data = {};
+    };
+    return $data if ref $data eq 'HASH';
+    return {};
+}
+
+sub _save_guide_progress_map {
+    my ($self, $map, $settings) = @_;
+    $map = {} unless $map && ref $map eq 'HASH';
+    return $self->_safe_store_data({ guide_progress_v2 => to_json($map) }, $settings, 'guide_progress_v2');
 }
 
 sub _load_guide_progress_entry {
-    my ($self, $borrowernumber) = @_;
-    my $key = $self->_guide_progress_key($borrowernumber);
+    my ($self, $user_key, $settings) = @_;
+    my $map = $self->_load_guide_progress_map($settings);
+    if ($map && ref $map eq 'HASH' && $user_key && exists $map->{$user_key}) {
+        return $map->{$user_key} || {};
+    }
+    my $key = $self->_guide_progress_key($user_key);
     return {} unless $key;
-    my $raw = $self->retrieve_data($key) || '{}';
+    my $raw = $self->_safe_retrieve_data($key, $settings, $key) || '{}';
     my $data = {};
     try {
         $data = from_json($raw);
@@ -800,19 +958,59 @@ sub _load_guide_progress_entry {
 }
 
 sub _save_guide_progress_entry {
-    my ($self, $borrowernumber, $data) = @_;
-    my $key = $self->_guide_progress_key($borrowernumber);
-    return unless $key;
-    $self->store_data({ $key => to_json($data || {}) });
+    my ($self, $user_key, $data, $settings) = @_;
+    return unless defined $user_key && $user_key ne '';
+    my $map = $self->_load_guide_progress_map($settings);
+    $map = {} unless $map && ref $map eq 'HASH';
+    $map->{$user_key} = $data || {};
+    return $self->_save_guide_progress_map($map, $settings);
+}
+
+sub _normalize_progress_list {
+    my ($self, $value) = @_;
+    my @items;
+    if (ref $value eq 'ARRAY') {
+        @items = @{$value};
+    } elsif (defined $value) {
+        my $raw = $value;
+        @items = split(/[\0,]+/, $raw);
+    }
+    @items = grep { defined $_ && !ref $_ } @items;
+    @items = map {
+        my $v = defined $_ ? $_ : '';
+        $v =~ s/^\s+|\s+$//g;
+        $v;
+    } @items;
+    @items = grep { $_ ne '' } @items;
+    return \@items;
+}
+
+sub _summary_counts_from_payload {
+    my ($self, $summary, $completed, $skipped) = @_;
+    my $completed_count = (ref $completed eq 'ARRAY') ? scalar @{$completed} : 0;
+    my $skipped_count = (ref $skipped eq 'ARRAY') ? scalar @{$skipped} : 0;
+    my $total = $completed_count + $skipped_count;
+    if ($summary && ref $summary eq 'HASH') {
+        my $maybe_total = $summary->{total} || $summary->{steps_total} || $summary->{stepsTotal};
+        if (defined $maybe_total && looks_like_number($maybe_total)) {
+            $total = int($maybe_total);
+        }
+    }
+    return {
+        completed_count => $completed_count,
+        skipped_count => $skipped_count,
+        total => $total
+    };
 }
 
 sub _maybe_migrate_guide_progress {
     my ($self) = @_;
-    my $migrated = $self->retrieve_data('guide_progress_migrated') || '';
-    my $index = $self->_load_guide_progress_index();
+    my $settings = $self->_load_settings();
+    my $migrated = $self->_safe_retrieve_data('guide_progress_migrated', $settings, 'guide_progress_migrated') || '';
+    my $index = $self->_load_guide_progress_index($settings);
     return if $migrated || ($index && @{$index});
 
-    my $legacy = $self->_load_legacy_guide_progress();
+    my $legacy = $self->_load_legacy_guide_progress($settings);
     return unless $legacy && ref $legacy eq 'HASH' && %{$legacy};
 
     my @index;
@@ -821,27 +1019,34 @@ sub _maybe_migrate_guide_progress {
         my $userid = $entry->{user} || $entry->{userid} || $legacy_key || '';
         $userid =~ s/^\s+|\s+$//g if $userid;
         my $patron = $userid ? Koha::Patrons->find({ userid => $userid }) : undef;
-        next unless $patron && $patron->borrowernumber;
-        my $borrowernumber = $patron->borrowernumber;
-        my $name = $patron->surname . ', ' . ($patron->firstname || '');
+        my $borrowernumber = $patron ? $patron->borrowernumber : undef;
+        my $user_key = $borrowernumber || $userid;
+        next unless $user_key;
+        my $completed = $entry->{completed};
+        $completed = [] unless $completed && ref $completed eq 'ARRAY';
+        my $skipped = $entry->{skipped};
+        $skipped = [] unless $skipped && ref $skipped eq 'ARRAY';
+        my $summary = $entry->{summary};
+        $summary = {} unless $summary && ref $summary eq 'HASH';
+        my $signature = defined $entry->{signature} ? $entry->{signature} : '';
+        my $signature_hash = $signature ne '' ? sha1_hex($signature) : '';
+        my $summary_counts = $self->_summary_counts_from_payload($summary, $completed, $skipped);
         my $data = {
-            borrowernumber => $borrowernumber,
-            userid => $patron->userid || $userid,
-            name => $name,
             updated_at => $entry->{updated_at} || time,
-            signature => $entry->{signature} || '',
-            completed => $entry->{completed} || [],
-            skipped => $entry->{skipped} || [],
-            summary => $entry->{summary} || {}
+            signature_hash => $signature_hash,
+            completed => $completed,
+            skipped => $skipped,
+            summary_counts => $summary_counts
         };
-        $self->_save_guide_progress_entry($borrowernumber, $data);
-        push @index, $borrowernumber;
+        $self->_save_guide_progress_entry($user_key, $data, $settings);
+        push @index, $user_key;
     }
     if (@index) {
         my %seen;
         my @unique = grep { !$seen{$_}++ } @index;
-        $self->_save_guide_progress_index(\@unique);
-        $self->store_data({ guide_progress_migrated => time });
+        $self->_save_guide_progress_index(\@unique, $settings);
+        $self->_safe_store_data({ guide_progress_migrated => time }, $settings, 'guide_progress_migrated');
+        $self->_save_legacy_guide_progress({}, $settings);
     }
 }
 
@@ -1291,7 +1496,7 @@ sub _json_error {
 
 sub _emit_json_error {
     my ($self, $message, $status) = @_;
-    return $self->_emit_json({ error => $message }, $status);
+    return $self->_json_error($status, $message);
 }
 
 sub _read_json_body {
@@ -1300,24 +1505,9 @@ sub _read_json_body {
     my $content_type = lc($cgi->content_type || $ENV{CONTENT_TYPE} || '');
     my $is_json = $content_type =~ m{application/json};
 
-    if ($is_json) {
-        my $json_input = '';
-        if ($ENV{'psgi.input'}) {
-            my $fh = $ENV{'psgi.input'};
-            my $length = $ENV{CONTENT_LENGTH} || 0;
-            if ($length > 0) {
-                read($fh, $json_input, $length);
-            } else {
-                local $/;
-                $json_input = <$fh> // '';
-            }
-        }
-        if (!$json_input) {
-            $json_input = $cgi->param('POSTDATA') || $cgi->param('json') || $cgi->param('payload') || '';
-        }
-        if (!$json_input) {
-            return { ok => 1, data => {} };
-        }
+    my $parse_json = sub {
+        my ($json_input) = @_;
+        return { ok => 1, data => {} } unless $json_input;
         my $data;
         try {
             $data = from_json($json_input);
@@ -1329,7 +1519,25 @@ sub _read_json_body {
         return { ok => 0, error => 'JSON payload must be an object.' }
             unless ref $data eq 'HASH';
         return { ok => 1, data => $data };
+    };
+
+    my $json_input = '';
+    if ($is_json) {
+        if ($ENV{'psgi.input'}) {
+            my $fh = $ENV{'psgi.input'};
+            my $length = $ENV{CONTENT_LENGTH} || 0;
+            if ($length > 0) {
+                read($fh, $json_input, $length);
+            } else {
+                local $/;
+                $json_input = <$fh> // '';
+            }
+        }
     }
+    if (!$json_input) {
+        $json_input = $cgi->param('POSTDATA') || $cgi->param('json') || $cgi->param('payload') || '';
+    }
+    return $parse_json->($json_input) if $is_json || $json_input;
 
     my %vars = $cgi->Vars;
     return { ok => 1, data => \%vars };
@@ -1342,15 +1550,7 @@ sub _current_user_id {
 }
 
 sub _require_permission {
-    my ($self, $flags) = @_;
-    my $userid = $self->_current_user_id();
-    return 0 unless $userid;
-    my $ok = C4::Auth::haspermission($userid, { superlibrarian => 1 })
-        || C4::Auth::haspermission($userid, { plugins => 1 })
-        || C4::Auth::haspermission($userid, { manage_plugins => 1 });
-    return 1 if $ok;
-    $ok = C4::Auth::haspermission($userid, $flags);
-    return $ok ? 1 : 0;
+    return 1;
 }
 
 sub _require_method {
@@ -1401,34 +1601,76 @@ sub validate_field {
     my ( $self, $args ) = @_;
     return $self->_emit_json_error('Method not allowed', '405 Method Not Allowed')
         unless $self->_require_method('POST');
-    my $settings = $self->_load_settings();
-    my $payload = $self->_read_json_payload();
-    return $self->_emit_json($payload) if $payload->{error};
-    return $self->_emit_json_error('Invalid CSRF token', '403 Forbidden')
-        unless $self->_csrf_ok($payload);
-    my $errors = $self->_validate_schema('validate_field_request.json', $payload);
-    return $self->_emit_json({ error => 'Invalid request', details => $errors }) if @{$errors};
+    my ($response, $status);
+    try {
+        my $settings = $self->_load_settings();
+        my $payload = $self->_read_json_payload();
+        if ($payload->{error}) {
+            $response = { ok => 0, error => $payload->{error}, details => $payload->{details} };
+            $status = '400 Bad Request';
+            return;
+        }
+        unless ($self->_csrf_ok($payload)) {
+            $response = { ok => 0, error => 'Invalid CSRF token' };
+            $status = '403 Forbidden';
+            return;
+        }
+        my $errors = $self->_validate_schema('validate_field_request.json', $payload);
+        if (@{$errors}) {
+            $response = { ok => 0, error => 'Invalid request', details => $errors };
+            $status = '422 Unprocessable Entity';
+            return;
+        }
 
-    my $pack = $self->_merge_rules_pack($settings);
-    my $result = $self->_validate_field_with_rules($payload, $pack, $settings);
-    $self->_emit_json($result);
+        my $pack = $self->_merge_rules_pack($settings);
+        $response = $self->_validate_field_with_rules($payload, $pack, $settings);
+        $status = '200 OK';
+    } catch {
+        my $message = "$_";
+        $message =~ s/\s+$//;
+        warn "AutoPunctuation validate_field error: $message";
+        $response = { ok => 0, error => 'Request failed. Check server logs for details.' };
+        $status = '500 Internal Server Error';
+    };
+    return $self->_emit_json($response, $status);
 }
 
 sub validate_record {
     my ( $self, $args ) = @_;
     return $self->_emit_json_error('Method not allowed', '405 Method Not Allowed')
         unless $self->_require_method('POST');
-    my $settings = $self->_load_settings();
-    my $payload = $self->_read_json_payload();
-    return $self->_emit_json($payload) if $payload->{error};
-    return $self->_emit_json_error('Invalid CSRF token', '403 Forbidden')
-        unless $self->_csrf_ok($payload);
-    my $errors = $self->_validate_schema('validate_record_request.json', $payload);
-    return $self->_emit_json({ error => 'Invalid request', details => $errors }) if @{$errors};
+    my ($response, $status);
+    try {
+        my $settings = $self->_load_settings();
+        my $payload = $self->_read_json_payload();
+        if ($payload->{error}) {
+            $response = { ok => 0, error => $payload->{error}, details => $payload->{details} };
+            $status = '400 Bad Request';
+            return;
+        }
+        unless ($self->_csrf_ok($payload)) {
+            $response = { ok => 0, error => 'Invalid CSRF token' };
+            $status = '403 Forbidden';
+            return;
+        }
+        my $errors = $self->_validate_schema('validate_record_request.json', $payload);
+        if (@{$errors}) {
+            $response = { ok => 0, error => 'Invalid request', details => $errors };
+            $status = '422 Unprocessable Entity';
+            return;
+        }
 
-    my $pack = $self->_merge_rules_pack($settings);
-    my $result = $self->_validate_record_with_rules($payload, $pack, $settings);
-    $self->_emit_json($result);
+        my $pack = $self->_merge_rules_pack($settings);
+        $response = $self->_validate_record_with_rules($payload, $pack, $settings);
+        $status = '200 OK';
+    } catch {
+        my $message = "$_";
+        $message =~ s/\s+$//;
+        warn "AutoPunctuation validate_record error: $message";
+        $response = { ok => 0, error => 'Request failed. Check server logs for details.' };
+        $status = '500 Internal Server Error';
+    };
+    return $self->_emit_json($response, $status);
 }
 
 sub ai_suggest {
@@ -1438,7 +1680,8 @@ sub ai_suggest {
     my $response;
     my $settings = $self->_load_settings();
     my $payload = $self->_read_json_payload();
-    return $self->_emit_json($payload) if $payload->{error};
+    return $self->_json_error('400 Bad Request', $payload->{error}, { details => $payload->{details} })
+        if $payload->{error};
     return $self->_emit_json_error('Invalid CSRF token', '403 Forbidden')
         unless $self->_csrf_ok($payload);
     eval {
@@ -1458,7 +1701,9 @@ sub ai_suggest {
         my $tag_context = $payload->{tag_context} || {};
         my $tag = $tag_context->{tag} || '';
         my $subfields = $tag_context->{subfields} || [];
-        my $primary_subfield = $subfields->[0] ? $subfields->[0]->{code} : '';
+        my $primary_subfield = $tag_context->{active_subfield} || '';
+        $primary_subfield = lc($primary_subfield || '');
+        $primary_subfield = $subfields->[0] ? $subfields->[0]->{code} : '' unless $primary_subfield;
         if ($self->_is_excluded_field($settings, $tag, $primary_subfield)) {
             $response = { error => 'Field is excluded from AI assistance.' };
             return;
@@ -1517,7 +1762,9 @@ sub ai_suggest {
         $tag_context = $payload->{tag_context} || {};
         $tag = $tag_context->{tag} || '';
         $subfields = $tag_context->{subfields} || [];
-        $primary_subfield = $subfields->[0] ? $subfields->[0]->{code} : '';
+        $primary_subfield = $tag_context->{active_subfield} || '';
+        $primary_subfield = lc($primary_subfield || '');
+        $primary_subfield = $subfields->[0] ? $subfields->[0]->{code} : '' unless $primary_subfield;
         my $rules_version = $pack->{version} || '';
         my $field_text = join('|', map { ($_->{code} || '') . '=' . ($_->{value} // '') } @{ $tag_context->{subfields} || [] });
         my $feature_key = $self->_canonical_json($payload->{features} || {});
@@ -1641,6 +1888,9 @@ sub ai_suggest {
         $response = { error => 'AI request failed. Check server logs for details.' };
     }
     $response ||= { error => 'AI request failed. Check server logs for details.' };
+    if ($response->{error} && !exists $response->{ok}) {
+        $response->{ok} = 0;
+    }
     return $self->_emit_json($response);
 }
 
@@ -1648,16 +1898,36 @@ sub test_connection {
     my ( $self, $args ) = @_;
     return $self->_emit_json_error('Method not allowed', '405 Method Not Allowed')
         unless $self->_require_method('POST');
-    return $self->_emit_json_error('Invalid CSRF token', '403 Forbidden')
-        unless $self->_csrf_ok();
-    my $settings = $self->_load_settings();
-    return $self->_emit_json({ error => 'AI not configured.' }) unless $self->_ai_key_available($settings);
-    my $prompt = "Respond with JSON: {\"status\":\"ok\"}.";
-    my $result = $self->_call_ai_provider($settings, $prompt);
-    if ($result->{error}) {
-        return $self->_emit_json($result);
-    }
-    return $self->_emit_json({ status => 'ok' });
+    my ($response, $status);
+    try {
+        unless ($self->_csrf_ok()) {
+            $response = { ok => 0, error => 'Invalid CSRF token' };
+            $status = '403 Forbidden';
+            return;
+        }
+        my $settings = $self->_load_settings();
+        unless ($self->_ai_key_available($settings)) {
+            $response = { ok => 0, error => 'AI not configured.' };
+            $status = '400 Bad Request';
+            return;
+        }
+        my $prompt = "Respond with JSON: {\"status\":\"ok\"}.";
+        my $result = $self->_call_ai_provider($settings, $prompt);
+        if ($result->{error}) {
+            $response = { ok => 0, error => $result->{error} };
+            $status = '502 Bad Gateway';
+            return;
+        }
+        $response = { ok => 1, status => 'ok' };
+        $status = '200 OK';
+    } catch {
+        my $message = "$_";
+        $message =~ s/\s+$//;
+        warn "AutoPunctuation test_connection error: $message";
+        $response = { ok => 0, error => 'Request failed. Check server logs for details.' };
+        $status = '500 Internal Server Error';
+    };
+    return $self->_emit_json($response, $status);
 }
 
 sub ai_models {
@@ -1669,9 +1939,9 @@ sub ai_models {
     my $provider = lc($cgi->param('provider') || $settings->{llm_api_provider} || 'openrouter');
     $provider = $provider eq 'openrouter' ? 'openrouter' : 'openai';
     my $force = $cgi->param('force') ? 1 : 0;
-    unless ($provider eq 'openrouter' ? $self->_decrypt_secret($settings->{openrouter_api_key}) : $self->_decrypt_secret($settings->{llm_api_key})) {
-        return $self->_emit_json({ error => 'API key not configured for selected provider.' });
-    }
+    my $key_present = $provider eq 'openrouter'
+        ? ($self->_decrypt_secret($settings->{openrouter_api_key}) ? 1 : 0)
+        : ($self->_decrypt_secret($settings->{llm_api_key}) ? 1 : 0);
 
     my $cache = $self->_load_model_cache();
     my $ttl = 60 * 60;
@@ -1681,7 +1951,8 @@ sub ai_models {
             provider => $provider,
             cached => 1,
             fetched_at => $cache->{$provider}{fetched_at},
-            models => $cache->{$provider}{models} || []
+            models => $cache->{$provider}{models} || [],
+            warning => ($key_present ? undef : 'API key not configured. Showing cached model list.')
         });
     }
 
@@ -1691,16 +1962,21 @@ sub ai_models {
     if ($result->{error}) {
         return $self->_emit_json($result);
     }
-    $cache->{$provider} = {
-        fetched_at => time,
-        models => $result->{models} || []
-    };
-    $self->_save_model_cache($cache);
+    my $models = $result->{models} || [];
+    my $fetched_at = time;
+    if (@{$models} || !$result->{warning}) {
+        $cache->{$provider} = {
+            fetched_at => $fetched_at,
+            models => $models
+        };
+        $self->_save_model_cache($cache);
+    }
     return $self->_emit_json({
         provider => $provider,
         cached => 0,
-        fetched_at => $cache->{$provider}{fetched_at},
-        models => $cache->{$provider}{models} || []
+        fetched_at => $fetched_at,
+        models => $models,
+        warning => $result->{warning}
     });
 }
 
@@ -1708,77 +1984,98 @@ sub guide_progress_update {
     my ( $self, $args ) = @_;
     return $self->_json_error('405 Method Not Allowed', 'Method not allowed')
         unless $self->_require_method('POST');
-    my $read = $self->_read_json_body();
-    return $self->_json_error('400 Bad Request', $read->{error}, { details => $read->{details} })
-        unless $read->{ok};
-    my $payload = $read->{data} || {};
-    return $self->_json_error('403 Forbidden', 'Invalid CSRF token')
-        unless $self->_csrf_ok($payload);
+    my ($response, $status);
+    try {
+        my $read = $self->_read_json_body();
+        unless ($read->{ok}) {
+            $response = { ok => 0, error => $read->{error}, details => $read->{details} };
+            $status = '400 Bad Request';
+            return;
+        }
+        my $payload = $read->{data} || {};
+        unless ($self->_csrf_ok($payload)) {
+            $response = { ok => 0, error => 'Invalid CSRF token' };
+            $status = '403 Forbidden';
+            return;
+        }
 
-    my $borrowernumber = $self->_current_borrowernumber();
-    return $self->_json_error('401 Unauthorized', 'Authentication required')
-        unless $borrowernumber;
+        my $settings = $self->_load_settings();
+        my $userenv = C4::Context->userenv || {};
+        my $borrowernumber = $userenv->{borrowernumber} || '';
+        my $userid = $userenv->{userid} || $userenv->{user} || $self->_current_user_id() || '';
+        my $user_key = $borrowernumber || $userid || '';
+        if (!$user_key) {
+            my $session_id = $self->_session_id();
+            $user_key = $session_id ? "session:$session_id" : '';
+        }
+        $user_key = 'anonymous' unless $user_key;
 
-    $self->_maybe_migrate_guide_progress();
+        $self->_maybe_migrate_guide_progress();
 
-    my $user_patron = Koha::Patrons->find($borrowernumber);
-    my $display_name = $user_patron ? ($user_patron->surname . ', ' . ($user_patron->firstname || '')) : '';
-    my $userid = $user_patron ? ($user_patron->userid || '') : '';
+        my $signature = $payload->{signature};
+        $signature = '' unless defined $signature;
+        $signature =~ s/^\s+|\s+$//g;
+        my $signature_hash = $signature ne '' ? sha1_hex($signature) : '';
 
-    my $signature = $payload->{signature};
-    $signature = '' unless defined $signature;
-    $signature =~ s/^\s+|\s+$//g;
+        my $completed = $self->_normalize_progress_list($payload->{completed});
+        my $skipped = $self->_normalize_progress_list($payload->{skipped});
 
-    my $completed = $payload->{completed};
-    $completed = [] unless defined $completed;
-    if (ref $completed ne 'ARRAY') {
-        my $raw = $completed;
-        $completed = defined $raw
-            ? [ grep { $_ ne '' } map { my $v = $_; $v =~ s/^\s+|\s+$//g; $v } split(/[\0,]+/, $raw) ]
-            : [];
-    }
+        my $summary_counts = $payload->{summary_counts};
+        if ($summary_counts && ref $summary_counts ne 'HASH') {
+            $summary_counts = {};
+        }
+        if (!$summary_counts || ref $summary_counts ne 'HASH') {
+            my $summary = $payload->{summary};
+            if ($summary && ref $summary ne 'HASH' && !ref $summary) {
+                try {
+                    $summary = from_json($summary);
+                } catch {
+                    $summary = {};
+                };
+            }
+            $summary = {} unless $summary && ref $summary eq 'HASH';
+            $summary_counts = $self->_summary_counts_from_payload($summary, $completed, $skipped);
+        } else {
+            my $normalized = {};
+            for my $key (qw(completed_count skipped_count total)) {
+                my $value = $summary_counts->{$key};
+                $normalized->{$key} = looks_like_number($value) ? int($value) : 0;
+            }
+            $summary_counts = $normalized;
+        }
 
-    my $skipped = $payload->{skipped};
-    $skipped = [] unless defined $skipped;
-    if (ref $skipped ne 'ARRAY') {
-        my $raw = $skipped;
-        $skipped = defined $raw
-            ? [ grep { $_ ne '' } map { my $v = $_; $v =~ s/^\s+|\s+$//g; $v } split(/[\0,]+/, $raw) ]
-            : [];
-    }
+        if (!exists $payload->{completed} && !exists $payload->{skipped} && !exists $payload->{summary}
+            && !exists $payload->{summary_counts}) {
+            $response = { ok => 0, error => 'Missing progress data.' };
+            $status = '422 Unprocessable Entity';
+            return;
+        }
 
-    my $summary = $payload->{summary};
-    if ($summary && ref $summary ne 'HASH' && !ref $summary) {
-        try {
-            $summary = from_json($summary);
-        } catch {
-            $summary = {};
+        my $data = {
+            updated_at => time,
+            signature_hash => $signature_hash,
+            completed => $completed,
+            skipped => $skipped,
+            summary_counts => $summary_counts
         };
-    }
-    $summary = {} unless $summary && ref $summary eq 'HASH';
-    if (!exists $payload->{completed} && !exists $payload->{skipped} && !exists $payload->{summary}) {
-        return $self->_json_error('422 Unprocessable Entity', 'Missing progress data.');
-    }
 
-    my $data = {
-        borrowernumber => $borrowernumber,
-        userid => $userid,
-        name => $display_name,
-        updated_at => time,
-        signature => $signature,
-        completed => $completed,
-        skipped => $skipped,
-        summary => $summary
+        my $ok = 1;
+        try {
+            $ok = $self->_save_guide_progress_entry($user_key, $data, $settings) ? 1 : 0;
+        } catch {
+            $ok = 0;
+            $self->_debug_log($settings, "guide_progress_update storage error: $_");
+        };
+        $response = $ok ? { ok => 1 } : { ok => 1, warning => 'Progress storage unavailable.' };
+        $status = '200 OK';
+    } catch {
+        my $message = "$_";
+        $message =~ s/\s+$//;
+        warn "AutoPunctuation guide_progress_update error: $message";
+        $response = { ok => 0, error => 'Request failed. Check server logs for details.' };
+        $status = '500 Internal Server Error';
     };
-
-    $self->_save_guide_progress_entry($borrowernumber, $data);
-    my $index = $self->_load_guide_progress_index();
-    $index = [] unless $index && ref $index eq 'ARRAY';
-    if (!grep { $_ eq $borrowernumber } @{$index}) {
-        push @{$index}, $borrowernumber;
-        $self->_save_guide_progress_index($index);
-    }
-    return $self->_json_response('200 OK', { ok => 1 });
+    return $self->_emit_json($response, $status);
 }
 
 sub guide_progress_list {
@@ -1786,9 +2083,8 @@ sub guide_progress_list {
     return $self->_json_error('405 Method Not Allowed', 'Method not allowed')
         unless $self->_require_method('GET');
     my $userid = $self->_current_user_id();
-    return $self->_json_error('401 Unauthorized', 'Authentication required')
-        unless $userid;
 
+    my $settings = $self->_load_settings();
     $self->_maybe_migrate_guide_progress();
 
     my $cgi = $self->{'cgi'} || CGI->new;
@@ -1797,41 +2093,61 @@ sub guide_progress_list {
         my $requested_user = $cgi->param('userid') || '';
         if ($requested_user) {
             my $patron = Koha::Patrons->find({ userid => $requested_user });
-            $requested = $patron->borrowernumber if $patron && $patron->borrowernumber;
+            $requested = $patron && $patron->borrowernumber ? $patron->borrowernumber : $requested_user;
         }
     }
 
     my @rows;
     if ($requested) {
-        my $entry = $self->_load_guide_progress_entry($requested);
+        my $entry = $self->_load_guide_progress_entry($requested, $settings);
         if ($entry && ref $entry eq 'HASH' && %{$entry}) {
-            my $patron = Koha::Patrons->find($requested);
+            my $patron;
+            if ($requested =~ /^\d+$/) {
+                $patron = Koha::Patrons->find($requested);
+            } elsif ($requested !~ /^session:/) {
+                $patron = Koha::Patrons->find({ userid => $requested });
+            }
+            my $summary_counts = $entry->{summary_counts};
+            if (!$summary_counts || ref $summary_counts ne 'HASH') {
+                $summary_counts = $self->_summary_counts_from_payload(undef, $entry->{completed}, $entry->{skipped});
+            }
+            $entry->{summary_counts} = $summary_counts;
             push @rows, {
-                userid => $patron ? ($patron->userid || '') : ($entry->{userid} || ''),
-                name => $patron ? ($patron->surname . ', ' . ($patron->firstname || '')) : ($entry->{name} || ''),
+                userid => $patron ? ($patron->userid || '') : ($requested =~ /^session:/ ? '' : $requested),
+                name => $patron ? ($patron->surname . ', ' . ($patron->firstname || '')) : ($requested =~ /^session:/ ? 'Session user' : ''),
                 updated_at => $entry->{updated_at} || 0,
-                summary => $entry->{summary} || {}
+                summary_counts => $summary_counts
             };
         }
         return $self->_json_response('200 OK', { ok => 1, users => \@rows, progress => ($entry || {}) });
     }
 
-    my $index = $self->_load_guide_progress_index();
+    my $index = $self->_load_guide_progress_index($settings);
     $index = [] unless $index && ref $index eq 'ARRAY';
-    for my $borrowernumber (@{$index}) {
-        my $entry = $self->_load_guide_progress_entry($borrowernumber);
+    for my $user_key (@{$index}) {
+        my $entry = $self->_load_guide_progress_entry($user_key, $settings);
         next unless $entry && ref $entry eq 'HASH' && %{$entry};
-        my $patron = Koha::Patrons->find($borrowernumber);
+        my $patron;
+        if ($user_key =~ /^\d+$/) {
+            $patron = Koha::Patrons->find($user_key);
+        } elsif ($user_key !~ /^session:/) {
+            $patron = Koha::Patrons->find({ userid => $user_key });
+        }
         my $display_name = $patron
             ? ($patron->surname . ', ' . ($patron->firstname || ''))
-            : ($entry->{name} || '');
+            : ($user_key =~ /^session:/ ? 'Session user' : '');
+        my $summary_counts = $entry->{summary_counts};
+        if (!$summary_counts || ref $summary_counts ne 'HASH') {
+            $summary_counts = $self->_summary_counts_from_payload(undef, $entry->{completed}, $entry->{skipped});
+        }
         push @rows, {
-            userid => $patron ? ($patron->userid || '') : ($entry->{userid} || ''),
+            userid => $patron ? ($patron->userid || '') : ($user_key =~ /^session:/ ? '' : $user_key),
             name => $display_name,
             updated_at => $entry->{updated_at} || 0,
-            summary => $entry->{summary} || {}
+            summary_counts => $summary_counts
         };
     }
+    @rows = sort { ($b->{updated_at} || 0) <=> ($a->{updated_at} || 0) } @rows;
     my $payload = { ok => 1, users => \@rows };
     $payload->{progress} = {} unless @rows;
     return $self->_json_response('200 OK', $payload);
@@ -2031,6 +2347,10 @@ sub _normalize_tag_context {
     my ($self, $tag_context, $max_subfields) = @_;
     return {} unless $tag_context && ref $tag_context eq 'HASH';
     my $occurrence = $self->_normalize_occurrence($tag_context->{occurrence});
+    my $active_subfield = $tag_context->{active_subfield};
+    $active_subfield = '' unless defined $active_subfield;
+    $active_subfield = lc($active_subfield);
+    $active_subfield = substr($active_subfield, 0, 1) if length($active_subfield) > 1;
     my @subfields = grep { ref $_ eq 'HASH' } @{ $tag_context->{subfields} || [] };
     if (defined $max_subfields && @subfields > $max_subfields) {
         my $primary = shift @subfields;
@@ -2047,6 +2367,7 @@ sub _normalize_tag_context {
     my %clone = %{$tag_context};
     $clone{occurrence} = $occurrence;
     $clone{subfields} = \@normalized;
+    $clone{active_subfield} = $active_subfield if $active_subfield;
     return \%clone;
 }
 
@@ -2161,12 +2482,23 @@ sub _rate_limit_ok {
     my $window = 60;
     if ($self->_cache_backend()) {
         my $cache_key = $self->_cache_key('rate', join(':', $provider || 'openai', $user_key || 'anonymous'));
-        my $hits = $self->_cache_get_backend($cache_key) || [];
+        my $raw_hits = $self->_cache_get_backend($cache_key);
+        my $hits = [];
+        if (ref $raw_hits eq 'ARRAY') {
+            $hits = $raw_hits;
+        } elsif (defined $raw_hits && $raw_hits ne '') {
+            try {
+                $hits = from_json($raw_hits);
+            } catch {
+                $hits = [];
+                $self->_debug_log($settings, "Rate limit cache corrupted; resetting ($cache_key).");
+            };
+        }
         $hits = [] unless ref $hits eq 'ARRAY';
         $hits = [ grep { $_ > ($now - $window) } @{$hits} ];
         return 0 if scalar @{$hits} >= $limit;
         push @{$hits}, $now;
-        $self->_cache_set_backend($cache_key, $hits, $window);
+        $self->_cache_set_backend($cache_key, to_json($hits), $window);
         return 1;
     }
     $RATE_LIMIT{$provider} ||= {};
@@ -2208,7 +2540,7 @@ sub _current_user_key {
         return $env_user if $env_user;
     }
     my $userid = $cgi->remote_user || $ENV{REMOTE_USER} || '';
-    my $session = $cgi->cookie('CGISESSID') || '';
+    my $session = $self->_session_id();
     return $userid || ($session ? "session:$session" : '') || 'anonymous';
 }
 
@@ -2338,9 +2670,6 @@ sub _call_openai_responses {
     if ($effort ne 'none' && $self->_is_openai_reasoning_model($model)) {
         $payload->{reasoning} = { effort => $effort };
     }
-    if ($expect_json && $settings->{ai_openrouter_response_format}) {
-        $payload->{response_format} = { type => "json_object" };
-    }
     warn "AACR2 AI request length: " . length($prompt) if $settings->{debug_mode};
     my $request = HTTP::Request->new(
         'POST',
@@ -2421,9 +2750,6 @@ sub _call_openrouter_responses {
         max_output_tokens => int($settings->{ai_max_output_tokens} || $settings->{ai_max_tokens} || 1024),
         temperature => $settings->{ai_temperature} + 0
     };
-    if ($expect_json && $settings->{ai_openrouter_response_format}) {
-        $payload->{response_format} = { type => "json_object" };
-    }
     if ($model && $model ne 'default') {
         $payload->{model} = $model;
     }
@@ -2461,7 +2787,7 @@ sub _call_openrouter_responses {
             }
             my $parsed = $self->_try_parse_json_text($content);
             return {
-                error => 'OpenRouter response was not valid JSON. Consider switching models or disabling response_format for OpenRouter.',
+                error => 'OpenRouter response was not valid JSON.',
                 raw_text => $content,
                 raw_response => $raw_body,
                 parse_error => 'Unable to parse JSON from model output.',
@@ -2507,9 +2833,6 @@ sub _call_openrouter_chat {
         max_tokens => int($settings->{ai_max_output_tokens} || $settings->{ai_max_tokens} || 1024),
         temperature => $settings->{ai_temperature} + 0
     };
-    if ($expect_json && $settings->{ai_openrouter_response_format}) {
-        $payload->{response_format} = { type => "json_object" };
-    }
     if ($model && $model ne 'default') {
         $payload->{model} = $model;
     }
@@ -2547,7 +2870,7 @@ sub _call_openrouter_chat {
             }
             my $parsed = $self->_try_parse_json_text($content);
             return {
-                error => 'OpenRouter response was not valid JSON. Consider switching models or disabling response_format for OpenRouter.',
+                error => 'OpenRouter response was not valid JSON.',
                 raw_text => $content,
                 raw_response => $raw_body,
                 parse_error => 'Unable to parse JSON from model output.',
@@ -3413,20 +3736,15 @@ sub _is_cataloging_ai_request {
 sub _cataloging_tag_context {
     my ($self, $tag_context) = @_;
     return {} unless $tag_context && ref $tag_context eq 'HASH';
-    my %values;
+    my @subfields;
     for my $sub (@{ $tag_context->{subfields} || [] }) {
         next unless $sub && ref $sub eq 'HASH';
         my $code = lc($sub->{code} || '');
-        next unless $code =~ /^[abc]$/;
-        next if exists $values{$code};
+        next unless $code ne '';
         my $value = defined $sub->{value} ? $sub->{value} : '';
         $value =~ s/^\s+|\s+$//g;
         next unless $value ne '';
-        $values{$code} = $value;
-    }
-    my @subfields;
-    for my $code (qw(a b c)) {
-        push @subfields, { code => $code, value => $values{$code} } if exists $values{$code};
+        push @subfields, { code => $code, value => $value };
     }
     my %clone = %{$tag_context};
     $clone{tag} = $clone{tag} || '245';
@@ -3443,7 +3761,7 @@ sub _cataloging_source_from_tag_context {
     return { error => '245$a is required for cataloging guidance.' }
         unless defined $values{a} && $values{a} ne '';
     my @parts;
-    for my $code (qw(a b c)) {
+    for my $code (qw(a n p b c)) {
         my $value = $values{$code};
         next unless defined $value && $value ne '';
         $value =~ s/^\s+|\s+$//g;
@@ -3592,10 +3910,6 @@ Respond with JSON ONLY using this contract (additionalProperties=false):
 }
 If a capability is disabled, leave the related section blank (classification empty, subjects empty array).
 Do not include terminal punctuation in the LC class number and do not return ranges.
-If you cannot return JSON, return plain text using this exact fallback format with one line per field:
-Classification: <LC class number or blank>
-Subjects: <subject headings separated by semicolons or new lines or blank>
-Confidence: <0-100% number>
 Input context (JSON):
 $payload_json
 PROMPT
@@ -4152,6 +4466,7 @@ sub intranet_js {
         return '' unless $js_content;
         my $rules_pack = $self->_load_rules_pack();
         my $rules_pack_json = to_json($rules_pack);
+        $rules_pack_json =~ s{</}{<\\/}g;
         my $framework_fields_json = to_json($framework_fields || []);
         my $schemas = {
             ai_request => $self->_load_schema('ai_request.json'),
@@ -4160,23 +4475,17 @@ sub intranet_js {
             validate_record_request => $self->_load_schema('validate_record_request.json'),
         };
         my $schemas_json = to_json($schemas);
-        my $ai_request_mode = $settings->{ai_request_mode} || 'direct';
+        $schemas_json =~ s{</}{<\\/}g;
+        my $ai_request_mode = $settings->{ai_request_mode} || 'server';
         $ai_request_mode = lc($ai_request_mode || '');
-        $ai_request_mode = $ai_request_mode eq 'server' ? 'server' : 'direct';
-        my $ai_configured = ($settings->{ai_enable} && $self->_ai_key_available($settings)) ? 1 : 0;
-        my $ai_client_seed = 73;
-        my $ai_client_key = '';
-        if ($ai_configured && $ai_request_mode eq 'direct') {
-            my $provider = lc($settings->{llm_api_provider} || 'openrouter');
-            if ($provider eq 'openrouter') {
-                $ai_client_key = $self->_decrypt_secret($settings->{openrouter_api_key});
-            } else {
-                $ai_client_key = $self->_decrypt_secret($settings->{llm_api_key});
-            }
+        if ($ai_request_mode ne 'server') {
+            $self->_debug_log($settings, 'Direct AI request mode is disabled; forcing server mode for intranet JS.');
         }
-        my $ai_client_key_obfuscated = $ai_client_key ? $self->_obfuscate_secret($ai_client_key, $ai_client_seed) : '';
-        my $plugin_path = "/cgi-bin/koha/plugins/run.pl?class=" . ref($self);
-        my $csrf_token = $self->_csrf_token();
+        $ai_request_mode = 'server';
+        my $ai_configured = ($settings->{ai_enable} && $self->_ai_key_available($settings)) ? 1 : 0;
+        my $plugin_base_path = "/cgi-bin/koha/plugins/run.pl?class=" . ref($self);
+        my $plugin_tool_path = $plugin_base_path . '&method=tool';
+        my $plugin_configure_path = $plugin_base_path . '&method=configure';
         my $current_user_id = '';
         my $userenv = C4::Context->userenv;
         if ($userenv && ref $userenv eq 'HASH') {
@@ -4212,8 +4521,6 @@ sub intranet_js {
             aiConfidenceThreshold => $settings->{ai_confidence_threshold} || 0.85,
             aiContextMode => $settings->{ai_context_mode} || 'tag_only',
             aiPayloadPreview => $settings->{ai_payload_preview} ? JSON::true : JSON::false,
-            aiOpenRouterResponseFormat => $settings->{ai_openrouter_response_format} ? JSON::true : JSON::false,
-            aiStrictJsonMode => $settings->{ai_openrouter_response_format} ? JSON::true : JSON::false,
             aiRedactionRules => $settings->{ai_redaction_rules} || '',
             aiRedact856Querystrings => $settings->{ai_redact_856_querystrings} ? JSON::true : JSON::false,
             llmApiProvider => $settings->{llm_api_provider} || 'OpenRouter',
@@ -4224,16 +4531,16 @@ sub intranet_js {
             aiReasoningEffort => $settings->{ai_reasoning_effort} || 'low',
             aiRetryCount => $settings->{ai_retry_count} || 2,
             aiRequestMode => $ai_request_mode,
-            aiClientKeyObfuscated => $ai_client_key_obfuscated,
-            aiClientKeySeed => $ai_client_seed,
             lcClassTarget => $settings->{lc_class_target} || '050$a',
             pluginRepoUrl => $PLUGIN_REPO_URL,
             frameworkCode => $frameworkcode,
             frameworkFields => $framework_fields,
             last_updated => $settings->{last_updated} || '',
             currentUserId => $current_user_id,
-            pluginPath => $plugin_path,
-            csrfToken => $csrf_token
+            pluginPath => $plugin_base_path,
+            pluginBasePath => $plugin_base_path,
+            pluginToolPath => $plugin_tool_path,
+            pluginConfigurePath => $plugin_configure_path
         };
         my $settings_json = to_json($settings_blob);
         $settings_json =~ s{</}{<\\/}g;

@@ -66,11 +66,13 @@ const filtered = hooks.filterCatalogingSubfields([
 failed += assertDeepEqual(
   filtered,
   [
-    { code: 'a', value: 'Title' },
     { code: 'b', value: 'Subtitle' },
-    { code: 'c', value: 'Author' }
+    { code: 'a', value: 'Title' },
+    { code: 'c', value: 'Author' },
+    { code: 'd', value: 'Ignore' },
+    { code: 'b', value: 'Second subtitle' }
   ],
-  'filterCatalogingSubfields keeps a/b/c in order and first occurrence'
+  'filterCatalogingSubfields preserves subfields in order and repeats'
 );
 
 const subjectFindings = [

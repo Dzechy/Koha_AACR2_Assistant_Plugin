@@ -111,18 +111,34 @@
     .action .btn {
         margin-right: 8px;
     }
-    dl {
-        margin-bottom: 15px;
+    .status-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 10px;
     }
-    dt {
-        font-weight: bold;
-        color: #333;
-        margin-bottom: 5px;
+    .status-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 8px 10px;
+        background: var(--aacr2-surface);
+        border: 1px solid var(--aacr2-border);
+        border-radius: 6px;
     }
-    dd {
+    .status-label {
+        font-size: 11px;
+        letter-spacing: 0.3px;
+        text-transform: uppercase;
+        color: var(--aacr2-muted);
+        font-weight: 600;
+    }
+    .status-value {
         color: #333;
-        margin-bottom: 10px;
-        margin-left: 20px;
+        font-weight: 600;
+    }
+    .status-value a {
+        word-break: break-all;
     }
     .warning-text {
         color: red;
@@ -163,96 +179,124 @@
                         <fieldset class="configuration-section">
                             <legend>Plugin Status</legend>
                             <div class="rows">
-                                <dl>
-                                    <dt>AACR2 Rules & Punctuation</dt>
-                                    <dd>
-                                        [% IF settings.enabled %]
-                                            <span class="label label-success">Enabled</span>
-                                        [% ELSE %]
-                                            <span class="label label-danger">Disabled</span>
-                                        [% END %]
-                                    </dd>
-                                    <dt>Cataloging Standard</dt>
-                                    <dd>AACR2 (MARC21)</dd>
-                                    <dt>Debug Mode</dt>
-                                    <dd>
-                                        [% IF settings.debug_mode %]
-                                            <span class="label label-warning">Enabled</span>
-                                        [% ELSE %]
-                                            <span class="label label-default">Disabled</span>
-                                        [% END %]
-                                    </dd>
-                                    <dt>Interactive Guide</dt>
-                                    <dd>
-                                        [% IF settings.enable_guide %]
-                                            <span class="label label-success">Enabled</span>
-                                        [% ELSE %]
-                                            <span class="label label-danger">Disabled</span>
-                                        [% END %]
-                                    </dd>
-                                    <dt>Internship Mode</dt>
-                                    <dd>
-                                        [% IF settings.internship_mode %]
-                                            <span class="label label-success">Enabled</span>
-                                        [% ELSE %]
-                                            <span class="label label-danger">Disabled</span>
-                                        [% END %]
-                                    </dd>
-                                    <dt>AACR2 Guardrails</dt>
-                                    <dd>
-                                        [% IF settings.enforce_aacr2_guardrails %]
-                                            <span class="label label-success">Enforced</span>
-                                        [% ELSE %]
-                                            <span class="label label-default">Soft</span>
-                                        [% END %]
-                                    </dd>
-                                    <dt>Live Validation</dt>
-                                    <dd>
-                                        [% IF settings.enable_live_validation %]
-                                            <span class="label label-warning">On</span>
-                                        [% ELSE %]
-                                            <span class="label label-default">Off</span>
-                                        [% END %]
-                                    </dd>
-                                    <dt>AI Assist</dt>
-                                    <dd>
-                                        [% IF ai_ready %]
-                                            <span class="label label-success">Enabled</span>
-                                        [% ELSIF settings.ai_enable %]
-                                            <span class="label label-warning">Enabled (key missing)</span>
-                                        [% ELSE %]
-                                            <span class="label label-danger">Disabled</span>
-                                        [% END %]
-                                    </dd>
-                                    <dt>AI Provider</dt>
-                                    <dd>[% ai_provider %]</dd>
-                                    <dt>AI Model</dt>
-                                    <dd>[% ai_model || 'Not set' %]</dd>
-                                    <dt>AI Key Status</dt>
-                                    <dd>
-                                        [% IF ai_provider_is_openrouter %]
-                                            [% IF openrouter_api_key_set %]
-                                                <span class="label label-success">Configured</span>
+                                <div class="status-grid">
+                                    <div class="status-item">
+                                        <span class="status-label">AACR2 Rules &amp; Punctuation</span>
+                                        <span class="status-value">
+                                            [% IF settings.enabled %]
+                                                <span class="label label-success">Enabled</span>
                                             [% ELSE %]
-                                                <span class="label label-danger">Missing</span>
+                                                <span class="label label-danger">Disabled</span>
                                             [% END %]
-                                        [% ELSE %]
-                                            [% IF llm_api_key_set %]
-                                                <span class="label label-success">Configured</span>
+                                        </span>
+                                    </div>
+                                    <div class="status-item">
+                                        <span class="status-label">Cataloging Standard</span>
+                                        <span class="status-value">AACR2 (MARC21)</span>
+                                    </div>
+                                    <div class="status-item">
+                                        <span class="status-label">Debug Mode</span>
+                                        <span class="status-value">
+                                            [% IF settings.debug_mode %]
+                                                <span class="label label-warning">Enabled</span>
                                             [% ELSE %]
-                                                <span class="label label-danger">Missing</span>
+                                                <span class="label label-default">Disabled</span>
                                             [% END %]
-                                        [% END %]
-                                    </dd>
-                                    <dt>Author LinkedIn</dt>
-                                    <dd><a href="[% author_linkedin %]" target="_blank" rel="noopener">[% author_linkedin %]</a></dd>
-                                    <dt>Plugin GitHub</dt>
-                                    <dd><a href="[% plugin_repo_url %]" target="_blank" rel="noopener">[% plugin_repo_url %]</a></dd>
+                                        </span>
+                                    </div>
+                                    <div class="status-item">
+                                        <span class="status-label">Interactive Guide</span>
+                                        <span class="status-value">
+                                            [% IF settings.enable_guide %]
+                                                <span class="label label-success">Enabled</span>
+                                            [% ELSE %]
+                                                <span class="label label-danger">Disabled</span>
+                                            [% END %]
+                                        </span>
+                                    </div>
+                                    <div class="status-item">
+                                        <span class="status-label">Internship Mode</span>
+                                        <span class="status-value">
+                                            [% IF settings.internship_mode %]
+                                                <span class="label label-success">Enabled</span>
+                                            [% ELSE %]
+                                                <span class="label label-danger">Disabled</span>
+                                            [% END %]
+                                        </span>
+                                    </div>
+                                    <div class="status-item">
+                                        <span class="status-label">AACR2 Guardrails</span>
+                                        <span class="status-value">
+                                            [% IF settings.enforce_aacr2_guardrails %]
+                                                <span class="label label-success">Enforced</span>
+                                            [% ELSE %]
+                                                <span class="label label-default">Soft</span>
+                                            [% END %]
+                                        </span>
+                                    </div>
+                                    <div class="status-item">
+                                        <span class="status-label">Live Validation</span>
+                                        <span class="status-value">
+                                            [% IF settings.enable_live_validation %]
+                                                <span class="label label-warning">On</span>
+                                            [% ELSE %]
+                                                <span class="label label-default">Off</span>
+                                            [% END %]
+                                        </span>
+                                    </div>
+                                    <div class="status-item">
+                                        <span class="status-label">AI Assist</span>
+                                        <span class="status-value">
+                                            [% IF ai_ready %]
+                                                <span class="label label-success">Enabled</span>
+                                            [% ELSIF settings.ai_enable %]
+                                                <span class="label label-warning">Enabled (key missing)</span>
+                                            [% ELSE %]
+                                                <span class="label label-danger">Disabled</span>
+                                            [% END %]
+                                        </span>
+                                    </div>
+                                    <div class="status-item">
+                                        <span class="status-label">AI Provider</span>
+                                        <span class="status-value">[% ai_provider %]</span>
+                                    </div>
+                                    <div class="status-item">
+                                        <span class="status-label">AI Model</span>
+                                        <span class="status-value">[% ai_model || 'Not set' %]</span>
+                                    </div>
+                                    <div class="status-item">
+                                        <span class="status-label">AI Key Status</span>
+                                        <span class="status-value">
+                                            [% IF ai_provider_is_openrouter %]
+                                                [% IF openrouter_api_key_set %]
+                                                    <span class="label label-success">Configured</span>
+                                                [% ELSE %]
+                                                    <span class="label label-danger">Missing</span>
+                                                [% END %]
+                                            [% ELSE %]
+                                                [% IF llm_api_key_set %]
+                                                    <span class="label label-success">Configured</span>
+                                                [% ELSE %]
+                                                    <span class="label label-danger">Missing</span>
+                                                [% END %]
+                                            [% END %]
+                                        </span>
+                                    </div>
+                                    <div class="status-item">
+                                        <span class="status-label">Author LinkedIn</span>
+                                        <span class="status-value"><a href="[% author_linkedin %]" target="_blank" rel="noopener">[% author_linkedin %]</a></span>
+                                    </div>
+                                    <div class="status-item">
+                                        <span class="status-label">Plugin GitHub</span>
+                                        <span class="status-value"><a href="[% plugin_repo_url %]" target="_blank" rel="noopener">[% plugin_repo_url %]</a></span>
+                                    </div>
                                     [% IF settings.last_updated %]
-                                    <dt>Last Updated</dt>
-                                    <dd>[% settings.last_updated %]</dd>
+                                    <div class="status-item">
+                                        <span class="status-label">Last Updated</span>
+                                        <span class="status-value">[% settings.last_updated %]</span>
+                                    </div>
                                     [% END %]
-                                </dl>
+                                </div>
                                 <div class="action">
                                     <a href="/cgi-bin/koha/plugins/run.pl?class=[% CLASS %]&method=configure" class="btn btn-primary">
                                         <i class="fa fa-cog"></i> Configure Plugin

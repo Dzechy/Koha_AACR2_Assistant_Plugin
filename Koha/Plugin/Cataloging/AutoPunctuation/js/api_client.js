@@ -67,25 +67,14 @@
         return errors;
     }
 
-    function decodeObfuscatedSecret(encoded, seed) {
-        if (!encoded) return '';
-        let decoded = '';
-        try {
-            decoded = atob(encoded);
-        } catch (err) {
-            return '';
-        }
-        const mask = Number.isFinite(seed) ? seed : 0;
-        let result = '';
-        for (let i = 0; i < decoded.length; i++) {
-            result += String.fromCharCode(decoded.charCodeAt(i) ^ mask);
-        }
-        return result;
-    }
-
     function parseList(value) {
         if (!value) return [];
         return value.split(',').map(item => item.trim()).filter(Boolean);
+    }
+
+    function getCsrfToken() {
+        const meta = document.querySelector('meta[name="csrf-token"]');
+        return meta ? (meta.getAttribute('content') || '') : '';
     }
 
     function normalizeOccurrence(value) {
@@ -318,10 +307,6 @@
             '}',
             'If a capability is disabled, leave the related section blank (classification empty, subjects empty array).',
             'Do not include terminal punctuation in the LC class number and do not return ranges.',
-            'If you cannot return JSON, return plain text using this exact fallback format with one line per field:',
-            'Classification: <LC class number or blank>',
-            'Subjects: <subject headings separated by semicolons or new lines or blank>',
-            'Confidence: <0-100% number>',
             'Input context (JSON):',
             payloadJson
         ].join('\n');
@@ -566,12 +551,8 @@
         return new Promise(resolve => setTimeout(resolve, ms));
     }
 
-    function strictJsonModeEnabled(settings) {
-        if (!settings) return false;
-        if (Object.prototype.hasOwnProperty.call(settings, 'aiStrictJsonMode')) {
-            return !!settings.aiStrictJsonMode;
-        }
-        return !!settings.aiOpenRouterResponseFormat;
+    function strictJsonModeEnabled() {
+        return false;
     }
 
     function sanitizeServerMessage(text) {
@@ -719,7 +700,6 @@
         if (effort !== 'none' && isOpenAiReasoningModel(model)) {
             payload.reasoning = { effort };
         }
-        if (expectJson && strictJsonModeEnabled(settings)) payload.response_format = { type: 'json_object' };
         const response = await requestWithTimeout('https://api.openai.com/v1/responses', {
             method: 'POST',
             headers: {
@@ -776,9 +756,6 @@
             temperature: Number(settings.aiTemperature) || 0,
             model
         };
-        if (expectJson && strictJsonModeEnabled(settings)) {
-            payload.response_format = { type: 'json_object' };
-        }
         const response = await requestWithTimeout('https://openrouter.ai/api/v1/chat/completions', {
             method: 'POST',
             headers: {
@@ -944,119 +921,6 @@
         return response;
     }
 
-    async function aiSuggestDirect(payload, settings) {
-        if (!settings.aiEnable) return { error: 'AI features are disabled.' };
-        const apiKey = decodeObfuscatedSecret(settings.aiClientKeyObfuscated, settings.aiClientKeySeed);
-        if (!apiKey) return { error: 'AI API key not configured.' };
-        const selectedModel = (settings.aiModel || '').toString().trim();
-        if (!selectedModel || selectedModel.toLowerCase() === 'default') {
-            return { error: 'AI model not configured. Select a model in plugin settings.' };
-        }
-        const prompt = buildAiPrompt(payload, settings);
-        const provider = (settings.llmApiProvider || 'openrouter').toLowerCase() === 'openrouter' ? 'openrouter' : 'openai';
-        const textMode = isCatalogingAiRequest(payload);
-        const expectJson = strictJsonModeEnabled(settings);
-        const providerCall = () => (provider === 'openrouter'
-            ? callOpenRouter(prompt, settings, apiKey, { expectJson })
-            : callOpenAiResponses(prompt, settings, apiKey, { expectJson }));
-        const providerResult = await callWithRetries(providerCall, settings.aiRetryCount);
-        if (providerResult && providerResult.textMode) {
-            if (textMode) {
-                const textResponse = buildCatalogingTextResponse(payload, providerResult.rawText, settings, {
-                    extractionSource: 'plain_text',
-                    degradedMode: false
-                });
-                if (!textResponse) return { error: 'AI response was empty.' };
-                const sanitized = sanitizeAiResponseForChat(textResponse);
-                if (providerResult.truncated) attachTruncationWarning(sanitized);
-                const guardrailError = validateAiResponseGuardrails(payload, sanitized, settings);
-                if (guardrailError) return { error: guardrailError };
-                return sanitized;
-            }
-            const unstructured = buildUnstructuredAiResponse(payload, providerResult.rawText, settings);
-            if (!unstructured) return { error: 'AI response was empty.' };
-            if (providerResult.truncated) attachTruncationWarning(unstructured);
-            return unstructured;
-        }
-        if (providerResult && providerResult.error) {
-            const debug = {
-                raw_provider_response: providerResult.rawResponse || '',
-                raw_text: providerResult.rawText || '',
-                parse_error: providerResult.parseError || providerResult.error || ''
-            };
-            const fallback = textMode
-                ? buildCatalogingTextResponse(payload, providerResult.rawText, settings, {
-                    extractionSource: 'raw_text',
-                    degradedMode: true
-                })
-                : buildUnstructuredAiResponse(payload, providerResult.rawText || providerResult.rawResponse || '', settings, { debug });
-            if (fallback) {
-                if (providerResult.truncated) attachTruncationWarning(fallback);
-                if (debug.raw_provider_response || debug.parse_error) fallback.debug = debug;
-                return fallback;
-            }
-            return { error: providerResult.error, debug };
-        }
-        const result = providerResult.data;
-        if (!result) {
-            return { error: 'AI response was empty.' };
-        }
-        const validationErrors = validateAgainstSchema('ai_response', result);
-        if (validationErrors.length) {
-            const debug = {
-                raw_provider_response: providerResult.rawResponse || '',
-                raw_text: providerResult.rawText || '',
-                parse_error: validationErrors.join('; ')
-            };
-            const fallback = textMode
-                ? buildCatalogingTextResponse(payload, providerResult.rawText, settings, {
-                    extractionSource: 'raw_text',
-                    degradedMode: true
-                })
-                : buildUnstructuredAiResponse(payload, providerResult.rawText || providerResult.rawResponse || '', settings, { debug });
-            if (fallback) {
-                fallback.debug = debug;
-                return fallback;
-            }
-            return { error: 'Invalid AI response format', details: validationErrors, debug };
-        }
-        const sanitized = sanitizeAiResponseForChat(result);
-        if (providerResult.truncated) attachTruncationWarning(sanitized);
-        if (textMode) {
-            if (!sanitized.classification) {
-                const classFinding = Array.isArray(sanitized.findings)
-                    ? sanitized.findings.find(f => String(f.code || '').toUpperCase() === 'AI_CLASSIFICATION')
-                    : null;
-                sanitized.classification = classFinding ? (classFinding.message || '') : '';
-            }
-            const rangeMessage = AiTextExtract && typeof AiTextExtract.detectClassificationRange === 'function'
-                ? AiTextExtract.detectClassificationRange(sanitized.classification || '')
-                : '';
-            if (rangeMessage) {
-                sanitized.classification = '';
-                sanitized.errors = Array.isArray(sanitized.errors) ? sanitized.errors : [];
-                sanitized.errors.push({
-                    code: 'CLASSIFICATION_RANGE',
-                    field: 'classification',
-                    message: rangeMessage
-                });
-            }
-            if (AiTextExtract && typeof AiTextExtract.subjectsFromHeadingList === 'function') {
-                sanitized.subjects = AiTextExtract.subjectsFromHeadingList(sanitized.subjects || []);
-            }
-        }
-        if (providerResult.parseError) {
-            sanitized.debug = {
-                raw_provider_response: providerResult.rawResponse || '',
-                raw_text: providerResult.rawText || '',
-                parse_error: providerResult.parseError || ''
-            };
-        }
-        const guardrailError = validateAiResponseGuardrails(payload, sanitized, settings);
-        if (guardrailError) return { error: guardrailError };
-        return sanitized;
-    }
-
     function normalizeReasoningEffort(value) {
         const effort = (value || '').toString().trim().toLowerCase();
         if (['none', 'low', 'medium', 'high'].includes(effort)) return effort;
@@ -1097,17 +961,24 @@
         return false;
     }
 
-    async function postJson(url, payload) {
+    async function postJson(url, payload, options) {
+        if (!url || !String(url).includes('method=')) {
+            throw new Error('Plugin method is required.');
+        }
         const finalPayload = payload && typeof payload === 'object' ? { ...payload } : {};
-        const csrfToken = (global.AutoPunctuationSettings || {}).csrfToken;
-        if (csrfToken && !finalPayload.csrf_token) {
+        const csrfToken = getCsrfToken();
+        if (csrfToken) {
             finalPayload.csrf_token = csrfToken;
         }
+        const opts = options || {};
+        const headers = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
+        if (csrfToken) headers['X-CSRF-Token'] = csrfToken;
         const response = await fetch(url, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            headers,
             credentials: 'include',
-            body: JSON.stringify(finalPayload)
+            body: JSON.stringify(finalPayload),
+            signal: opts.signal
         });
         const jsonResponse = isJsonResponse(response);
         if (!response.ok) {
@@ -1175,7 +1046,7 @@
                 throw new Error(message);
             }
             console.error(`[AACR2 Assistant] ${message}`);
-            return path || '';
+            return '';
         }
         return `${path}&method=${encodeURIComponent(method)}`;
     }
@@ -1196,7 +1067,7 @@
             if (errors.length) return Promise.reject(new Error(`Invalid request: ${errors.join(', ')}`));
             return postJson(buildEndpoint(pluginPath, 'validate_record'), payload);
         },
-        aiSuggest: (pluginPath, payload) => {
+        aiSuggest: (pluginPath, payload, options) => {
             const settings = global.AutoPunctuationSettings || {};
             const normalized = normalizeAiRequestPayload(payload);
             const errors = validateAgainstSchema('ai_request', normalized);
@@ -1204,10 +1075,10 @@
             const requestMode = (settings.aiRequestMode || settings.aiClientMode || 'direct').toLowerCase() === 'server'
                 ? 'server'
                 : 'direct';
-            if (requestMode === 'direct') {
-                return aiSuggestDirect(normalized, settings);
+            if (requestMode === 'direct' && settings.debugMode) {
+                console.warn('[AACR2 Assistant] Direct AI mode disabled; routing through server.');
             }
-            return postJson(buildEndpoint(pluginPath, 'ai_suggest'), normalized);
+            return postJson(buildEndpoint(pluginPath, 'ai_suggest'), normalized, options);
         },
         testConnection: (pluginPath) => postJson(buildEndpoint(pluginPath, 'test_connection'), {})
     };

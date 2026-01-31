@@ -71,6 +71,18 @@
     .select2-container {
         width: 100% !important;
     }
+    #llm_api_provider {
+        max-width: 260px;
+    }
+    #llm_api_provider + .select2-container {
+        max-width: 260px;
+        width: 100% !important;
+    }
+    #llm_api_provider + .select2-container .select2-selection__rendered {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
     .user-table {
         width: 100%;
         border-collapse: collapse;
@@ -108,6 +120,22 @@
     .disabled-checkbox {
         opacity: 0.5;
         cursor: not-allowed;
+    }
+    .ai-key-indicator {
+        display: inline-block;
+        margin-left: 6px;
+        padding: 2px 6px;
+        border-radius: 10px;
+        font-size: 11px;
+        font-weight: 600;
+    }
+    .ai-key-indicator.is-set {
+        background: #dff0d8;
+        color: #3c763d;
+    }
+    .ai-key-indicator.is-empty {
+        background: #f5f5f5;
+        color: #8a8a8a;
     }
     .warning-text {
         color: red;
@@ -223,7 +251,7 @@
                     <input type="hidden" name="class" value="[% CLASS %]"/>
                     <input type="hidden" name="method" value="[% METHOD %]"/>
                     <input type="hidden" name="save" value="1"/>
-                    <input type="hidden" name="csrf_token" value="[% csrf_token %]"/>
+                    <input type="hidden" name="csrf_token" id="csrf_token" value="[% csrf_token %]"/>
 
                     <ul class="nav nav-tabs aacr2-tabs" id="aacr2-config-tabs" role="tablist">
                         <li class="nav-item" role="presentation">
@@ -299,14 +327,23 @@
                                     <li>
                                         <label for="llm_api_provider">AI Provider:</label>
                                         [% SET ai_provider_norm = (settings.llm_api_provider || 'OpenRouter') | lower %]
-                                        <select name="llm_api_provider" id="llm_api_provider" class="form-control" style="width: auto; display: inline-block;">
+                                        <select name="llm_api_provider" id="llm_api_provider" class="form-control" style="width: 260px; max-width: 100%; display: inline-block;">
                                             <option value="OpenRouter" [% IF ai_provider_norm == 'openrouter' %]selected[% END %]>OpenRouter (recommended)</option>
                                             <option value="OpenAI" [% IF ai_provider_norm == 'openai' %]selected[% END %]>OpenAI</option>
                                         </select>
                                         <span class="hint">Choose which AI service to use.</span>
                                     </li>
+                                    [% IF !encryption_ready %]
+                                    <li>
+                                        <div class="alert alert-warning" style="margin: 6px 0;">
+                                            <strong>Encryption key missing:</strong>
+                                            Koha encryption_key is not configured in koha-conf.xml. API keys cannot be saved until it is set.
+                                        </div>
+                                    </li>
+                                    [% END %]
                                     <li id="ai-api-key-row" data-openai-set="[% llm_api_key_set ? 1 : 0 %]" data-openrouter-set="[% openrouter_api_key_set ? 1 : 0 %]">
                                         <label for="ai_api_key" id="ai-api-key-label">API Key:</label>
+                                        <span id="ai-api-key-indicator" class="ai-key-indicator"></span>
                                         <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
                                             <input type="password" name="ai_api_key" id="ai_api_key" value="" class="form-control" style="width: 300px;" autocomplete="new-password"/>
                                             <button type="button" class="btn btn-xs btn-danger" id="clear-ai-key" disabled>Clear key</button>
@@ -334,12 +371,10 @@
                                     </li>
                                     <li>
                                         <label for="ai_request_mode">AI Request Mode:</label>
-                                        [% SET ai_request_mode_norm = (settings.ai_request_mode || 'direct') | lower %]
                                         <select name="ai_request_mode" id="ai_request_mode" class="form-control" style="width: 260px;">
-                                            <option value="direct" [% IF ai_request_mode_norm == 'direct' %]selected[% END %]>Direct (browser)</option>
-                                            <option value="server" [% IF ai_request_mode_norm == 'server' %]selected[% END %]>Server (Koha)</option>
+                                            <option value="server" selected>Server (Koha)</option>
                                         </select>
-                                        <span class="hint">Choose whether the browser talks directly to the provider or routes through Koha.</span>
+                                        <span class="hint">Direct browser mode is disabled to keep provider API keys server-side.</span>
                                     </li>
                                     <li>
                                         <button type="button" class="btn btn-default" id="ai-test-connection">
@@ -604,14 +639,12 @@
                                                 <th class="sortable" data-sort="name">Name</th>
                                                 <th class="sortable" data-sort="steps_completed">Steps Done</th>
                                                 <th class="sortable" data-sort="steps_skipped">Steps Skipped</th>
-                                                <th class="sortable" data-sort="tier_progress">Tier</th>
-                                                <th class="sortable" data-sort="modules_completed">Modules Done</th>
                                                 <th class="sortable" data-sort="updated_at">Last Updated</th>
                                             </tr>
                                         </thead>
                                         <tbody>
                                             <tr>
-                                                <td colspan="7">Loading progress...</td>
+                                                <td colspan="5">Loading progress...</td>
                                             </tr>
                                         </tbody>
                                     </table>
@@ -621,7 +654,7 @@
                         </div>
                         <div class="tab-pane fade" id="aacr2-tab-advanced" role="tabpanel">
                             <fieldset class="configuration-section">
-                                <legend>Debug &amp; JSON</legend>
+                                <legend>Debug &amp; Preview</legend>
                                 <ol class="rows">
                                     <li>
                                         <label for="debug_mode">Debug Mode:</label>
@@ -632,11 +665,6 @@
                                         <label for="ai_payload_preview">Enable Payload Preview:</label>
                                         <input type="checkbox" name="ai_payload_preview" id="ai_payload_preview" value="1" [% IF settings.ai_payload_preview %]checked[% END %]/>
                                         <span class="hint">Lets admins preview what will be sent to the AI.</span>
-                                    </li>
-                                    <li>
-                                        <label for="ai_openrouter_response_format">Strict JSON mode (providers that support it):</label>
-                                        <input type="checkbox" name="ai_openrouter_response_format" id="ai_openrouter_response_format" value="1" [% IF settings.ai_openrouter_response_format %]checked[% END %]/>
-                                        <span class="hint">Only enable if the model reliably returns JSON. The plugin still tolerates plain text when this is off.</span>
                                     </li>
                                 </ol>
                             </fieldset>
@@ -773,6 +801,112 @@
         indentWithTabs: false,
         indentUnit: 2
     });
+    var draftKey = 'aacr2-config-draft-v1';
+    var draftState = null;
+    var draftTimer = null;
+
+    function escapeSelector(value) {
+        if (window.CSS && CSS.escape) return CSS.escape(value);
+        return value.replace(/([ #;?%&,.+*~\\':"!^$\\[\\]()=>|/@])/g, '\\\\$1');
+    }
+
+    function shouldPersistField(el) {
+        var name = el.getAttribute('name') || '';
+        if (!name) return false;
+        if (/api_key/i.test(name)) return false;
+        if (name === 'save' || name === 'class' || name === 'method') return false;
+        var type = (el.getAttribute('type') || '').toLowerCase();
+        if (type === 'password' || type === 'file' || type === 'hidden') return false;
+        return true;
+    }
+
+    function collectDraftState() {
+        var values = {};
+        $('form').find('input, select, textarea').each(function() {
+            if (!shouldPersistField(this)) return;
+            var name = this.getAttribute('name');
+            var $el = $(this);
+            var type = (this.getAttribute('type') || '').toLowerCase();
+            if (type === 'checkbox') {
+                values[name] = $el.prop('checked');
+                return;
+            }
+            if (type === 'radio') {
+                if ($el.prop('checked')) values[name] = $el.val();
+                return;
+            }
+            if ($el.is('select[multiple]')) {
+                values[name] = $el.val() || [];
+                return;
+            }
+            values[name] = $el.val();
+        });
+        values.__activeTab = $('#aacr2-config-tabs .nav-link.active').attr('href') || '';
+        return { ts: Date.now(), values: values };
+    }
+
+    function applyDraftState(state) {
+        if (!state) return;
+        var values = state.values || state;
+        if (!values || typeof values !== 'object') return;
+        Object.keys(values).forEach(function(name) {
+            if (name === '__activeTab') return;
+            var selector = '[name="' + escapeSelector(name) + '"]';
+            var $els = $(selector);
+            if (!$els.length) return;
+            var type = ($els.attr('type') || '').toLowerCase();
+            var value = values[name];
+            if (type === 'checkbox') {
+                $els.prop('checked', !!value);
+                return;
+            }
+            if (type === 'radio') {
+                $els.filter('[value="' + value + '"]').prop('checked', true);
+                return;
+            }
+            if ($els.is('select[multiple]')) {
+                $els.val(Array.isArray(value) ? value : []).trigger('change');
+                return;
+            }
+            $els.val(value);
+        });
+        if (values.custom_rules && editor) {
+            editor.setValue(values.custom_rules);
+        }
+        if (values.__activeTab) {
+            var $tab = $('#aacr2-config-tabs a[href="' + values.__activeTab + '"]');
+            if ($tab.length) $tab.trigger('click');
+        }
+    }
+
+    function saveDraftSoon() {
+        if (draftTimer) clearTimeout(draftTimer);
+        draftTimer = setTimeout(function() {
+            try {
+                var snapshot = collectDraftState();
+                sessionStorage.setItem(draftKey, JSON.stringify(snapshot));
+            } catch (err) {
+                // ignore storage failures
+            }
+        }, 150);
+    }
+
+    function loadDraftState() {
+        try {
+            var raw = sessionStorage.getItem(draftKey);
+            return raw ? JSON.parse(raw) : null;
+        } catch (err) {
+            return null;
+        }
+    }
+
+    function clearDraftState() {
+        try {
+            sessionStorage.removeItem(draftKey);
+        } catch (err) {
+            // ignore storage failures
+        }
+    }
 
     // Toggle select all checkboxes
     function toggleSelectAll(className, checked) {
@@ -848,8 +982,9 @@
     }
 
     function progressStatusFromSummary(summary) {
-        var total = summary.steps_total || 0;
-        var done = (summary.steps_completed || 0) + (summary.steps_skipped || 0);
+        var total = summary.total || summary.steps_total || 0;
+        var done = (summary.completed_count || summary.steps_completed || 0)
+            + (summary.skipped_count || summary.steps_skipped || 0);
         if (!total) return 'no_data';
         if (!done) return 'not_started';
         if (done >= total) return 'completed';
@@ -862,33 +997,15 @@
         return date.toLocaleString();
     }
 
-    function formatTierSummary(summary) {
-        var tiers = (summary && summary.tier_breakdown) ? summary.tier_breakdown : {};
-        var keys = Object.keys(tiers || {});
-        if (!keys.length) return '';
-        keys.sort(function(a, b) {
-            var numA = parseInt(String(a).replace(/[^\d]/g, ''), 10) || 0;
-            var numB = parseInt(String(b).replace(/[^\d]/g, ''), 10) || 0;
-            if (numA && numB && numA !== numB) return numA - numB;
-            return String(a).localeCompare(String(b));
-        });
-        return keys.map(function(label) {
-            var entry = tiers[label] || {};
-            var done = (entry.completed || 0) + (entry.skipped || 0);
-            var total = entry.total || 0;
-            return label + ': ' + done + '/' + total;
-        }).join(' | ');
-    }
-
     function renderProgressTable(rows) {
         var $tbody = $('#aacr2-progress-table tbody');
         $tbody.empty();
         if (!rows || !rows.length) {
-            $tbody.append('<tr><td colspan="7">No progress records yet.</td></tr>');
+            $tbody.append('<tr><td colspan="5">No progress records yet.</td></tr>');
             return;
         }
         rows.forEach(function(row) {
-            var summary = row.summary || {};
+            var summary = row.summary_counts || row.summary || {};
             var status = progressStatusFromSummary(summary);
             var statusLabel = {
                 completed: 'Completed',
@@ -896,14 +1013,16 @@
                 not_started: 'Not started',
                 no_data: 'No data'
             }[status] || 'Unknown';
+            var done = (summary.completed_count || summary.steps_completed || 0)
+                + (summary.skipped_count || summary.steps_skipped || 0);
+            var total = summary.total || summary.steps_total || 0;
+            var skipped = summary.skipped_count || summary.steps_skipped || 0;
             var $tr = $('<tr>')
                 .attr('data-status', status)
                 .append('<td>' + (row.userid || '') + '</td>')
                 .append('<td>' + (row.name || '') + '</td>')
-                .append('<td>' + ((summary.steps_completed || 0) + (summary.steps_skipped || 0)) + '/' + (summary.steps_total || 0) + ' (' + statusLabel + ')</td>')
-                .append('<td>' + (summary.steps_skipped || 0) + '</td>')
-                .append('<td>' + formatTierSummary(summary) + '</td>')
-                .append('<td>' + (summary.modules_completed || 0) + '/' + (summary.modules_total || 0) + '</td>')
+                .append('<td>' + done + '/' + total + ' (' + statusLabel + ')</td>')
+                .append('<td>' + skipped + '</td>')
                 .append('<td>' + formatTimestamp(row.updated_at) + '</td>');
             $tbody.append($tr);
         });
@@ -939,6 +1058,16 @@
         return (status === 401 || status === 403)
             ? 'Session expired. Please refresh and log in again.'
             : '';
+    }
+
+    function getCsrfToken() {
+        var $field = $('#csrf_token');
+        var token = $field.length ? ($field.val() || '') : '';
+        if (!token) {
+            var meta = document.querySelector('meta[name="csrf-token"]');
+            token = meta ? (meta.getAttribute('content') || '') : '';
+        }
+        return token;
     }
 
     function fetchJson(url, options) {
@@ -1000,13 +1129,22 @@
             })
             .catch(function(err) {
                 toastr.error('Progress load failed: ' + err.message);
-                $('#aacr2-progress-table tbody').html('<tr><td colspan="7">Unable to load progress.</td></tr>');
+                $('#aacr2-progress-table tbody').html('<tr><td colspan="5">Unable to load progress.</td></tr>');
             });
     }
 
     // Document ready function
     $(document).ready(function() {
+        var savedSuccessfully = [% saved_successfully ? 1 : 0 %];
+        draftState = loadDraftState();
         var pluginPath = '/cgi-bin/koha/plugins/run.pl?class=[% CLASS %]';
+        var csrfMeta = document.querySelector('meta[name="csrf-token"]');
+        if (csrfMeta) {
+            var csrfValue = csrfMeta.getAttribute('content') || '';
+            if (csrfValue && $('#csrf_token').length && !$('#csrf_token').val()) {
+                $('#csrf_token').val(csrfValue);
+            }
+        }
         var tabEls = document.querySelectorAll('#aacr2-config-tabs a[data-bs-toggle="tab"]');
         if (window.bootstrap && window.bootstrap.Tab) {
             tabEls.forEach(function(tabEl) {
@@ -1033,8 +1171,14 @@
         });
         $('#llm_api_provider').select2({
             minimumResultsForSearch: Infinity,
-            width: '100%'
+            width: 'style'
         });
+
+        if (savedSuccessfully) {
+            clearDraftState();
+        } else if (draftState) {
+            applyDraftState(draftState);
+        }
 
         // Toggle user checkboxes based on initial state
         toggleUserCheckboxes();
@@ -1064,9 +1208,10 @@
             toastr.success('Settings saved successfully!');
         [% END %]
 
-        var defaultOpenAiModel = '[% settings.ai_model_openai %]';
-        var defaultOpenRouterModel = '[% settings.ai_model_openrouter %]';
-        var fallbackModel = '[% settings.ai_model %]';
+        var modelDefaults = [% model_defaults_json || '{}' %];
+        var defaultOpenAiModel = modelDefaults.openai || '';
+        var defaultOpenRouterModel = modelDefaults.openrouter || '';
+        var fallbackModel = modelDefaults.fallback || '';
         if (!defaultOpenAiModel && fallbackModel && fallbackModel !== 'default' && fallbackModel.indexOf('/') === -1) {
             defaultOpenAiModel = fallbackModel;
         }
@@ -1080,6 +1225,15 @@
             openai: defaultOpenAiModel || '',
             openrouter: defaultOpenRouterModel || ''
         };
+        var modelWarnings = {
+            openai: '',
+            openrouter: ''
+        };
+        var draftModelValue = $('#ai_model').val();
+        var draftProviderValue = ($('#llm_api_provider').val() || 'OpenRouter').toLowerCase();
+        if (draftModelValue) {
+            modelSelections[draftProviderValue] = draftModelValue;
+        }
 
         if (!modelSelections.openai && activeProvider === 'openai' && fallbackModel) {
             modelSelections.openai = fallbackModel;
@@ -1128,6 +1282,8 @@
                         renderOpenAiModels(selectedId);
                         return;
                     }
+                    modelWarnings.openai = (data && data.warning) ? data.warning : '';
+                    updateModelHint('openai');
                     openAiModels = (data && data.models) ? data.models : [];
                     renderOpenAiModels(selectedId);
                 })
@@ -1237,6 +1393,8 @@
                         renderOpenRouterModels(selectedId);
                         return;
                     }
+                    modelWarnings.openrouter = (data && data.warning) ? data.warning : '';
+                    updateModelHint('openrouter');
                     openRouterModels = (data && data.models) ? data.models : [];
                     renderOpenRouterModels(selectedId);
                 })
@@ -1251,6 +1409,8 @@
             var text = normalized === 'openrouter'
                 ? 'Search and filter OpenRouter models (text/image/input/output/free).'
                 : 'Search OpenAI model IDs. Filters are available for OpenRouter only.';
+            var warning = modelWarnings[normalized] || '';
+            if (warning) text += ' ' + warning;
             $('#ai-model-hint').text(text);
         }
 
@@ -1269,6 +1429,12 @@
             $('#ai-api-key-label').text(label);
             $('#ai-api-key-hint').text(hint);
             $('#clear-ai-key').prop('disabled', !isSet);
+            var $indicator = $('#ai-api-key-indicator');
+            if (isSet) {
+                $indicator.text('Saved').removeClass('is-empty').addClass('is-set').show();
+            } else {
+                $indicator.text('Not set').removeClass('is-set').addClass('is-empty').show();
+            }
         }
 
         function toggleAiProviderFields() {
@@ -1341,10 +1507,14 @@
 
         $('#ai-test-connection').on('click', function() {
             toastr.info('Testing AI connection...');
+            var csrfToken = getCsrfToken();
             fetchJson(pluginPath + '&method=test_connection', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ csrf_token: '[% csrf_token %]' })
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': csrfToken
+                },
+                body: JSON.stringify({ csrf_token: csrfToken })
             })
                 .then(data => {
                     if (data.error) {
@@ -1377,6 +1547,13 @@
         }
 
         setupUnifiedKey();
+
+        $('form').on('input change', 'input, select, textarea', function() {
+            saveDraftSoon();
+        });
+        $('#aacr2-config-tabs a').on('click', function() {
+            saveDraftSoon();
+        });
     });
 
     // Validate JSON on save
