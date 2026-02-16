@@ -1,0 +1,20 @@
+{
+  "type": "object",
+  "required": ["tag", "subfields"],
+  "properties": {
+    "tag": { "type": "string" },
+    "ind1": { "type": "string" },
+    "ind2": { "type": "string" },
+    "subfields": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["code", "value"],
+        "properties": {
+          "code": { "type": "string" },
+          "value": { "type": "string" }
+        }
+      }
+    }
+  }
+}

@@ -42,6 +42,9 @@ The Koha AACR2 AI Guardrail Assistant enforces AACR2-only MARC21 punctuation rul
 ## Changelog
 
 - 2026-01-29: Progress endpoints now return JSON on errors, accept JSON or form payloads, and store per-user progress safely with migration from legacy data. The guide UI reports sync failures with status messages. Configuration tabs now use Bootstrap 5 tab markup styled as hyperlinks. Added OpenAI reasoning effort controls, higher default max output tokens, and truncation warnings.
+- 2026-02-13: Added server/direct request-mode API key UX updates, browser-key persistence hardening, provider model fetch gating (no live fetch without configured key), elapsed AI request status messaging, stronger subject extraction/subdivision handling (`x/y/z/v`), per-subject apply actions, strict JSON prompt toggle, and prompt defaults updated to include `source_text`.
+- 2026-02-13: Improved AI error handling for HTTP 429/empty-provider responses with actionable guidance, added robust parsing for OpenRouter/OpenAI array-style content blocks, tightened false-positive classification range checks, removed bulk subject apply in favor of per-suggestion apply buttons, added intelligent duplicate-aware subject application with replace-toggle behavior, and updated heading guidance/rules to avoid forced terminal punctuation in 1XX/6XX/7XX/8XX. Added a 100$a guardrail for missing comma-space in personal name main entry form.
+- 2026-02-13: Expanded training-guide/rules consistency for conservative punctuation policy: added hands-off coverage for 041/255/340/856 and complex notes (505/533/534), added 250$b and 300$e support, refined 300$c `+` handling before accompanying material, and aligned 246 guidance to minimal auto-punctuation.
 
 ## Key Features
 
@@ -58,7 +61,7 @@ The Koha AACR2 AI Guardrail Assistant enforces AACR2-only MARC21 punctuation rul
 
 - Koha intranet access with plugin support enabled.
 - Modern browser (MutationObserver support recommended).
-- Optional: OpenAI API key for AI assist.
+- Optional: OpenAI or OpenRouter API key for AI assist.
 
 ## Installation
 
@@ -113,7 +116,13 @@ Internship mode disables auto-apply and apply/undo actions for selected users, w
 
 ## AI Assist
 
-AI assist is optional and requires an API key. AI responses are constrained to JSON and never auto-apply changes. All AI suggestions require explicit user acceptance. Classification and subject guidance are based on the title, while call numbers are built deterministically from classification + cutter + year.
+AI assist is optional and requires an API key.
+
+- `Server (Koha)` mode uses provider keys stored server-side only.
+- `Direct browser` mode uses obfuscated browser-local keys and sends requests directly from the browser.
+- Strict JSON mode can be enabled in configuration to make default prompts request structured JSON output.
+- AI suggestions are never auto-applied; all actions require explicit user acceptance.
+- Classification and subject guidance are based on 245 title source text, while call numbers are built deterministically from classification + cutter + year.
 
 ## Admin Training Progress
 
@@ -160,6 +169,12 @@ Perl schema/regex validator tests (requires a Koha environment):
 
 ```bash
 prove -l t
+```
+
+Build the plugin package (`.kpz`) with:
+
+```bash
+./scripts/build_kpz.sh
 ```
 
 ## License

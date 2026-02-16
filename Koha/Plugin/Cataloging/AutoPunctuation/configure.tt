@@ -1,0 +1,2701 @@
+[% INCLUDE 'doc-head-open.inc' %]
+<title>Koha: AACR2 MARC21 Intellisense + Guardrails Configuration</title>
+[% INCLUDE 'doc-head-close.inc' %]
+[% INCLUDE 'calendar.inc' %]
+<style>
+    :root {
+        --aacr2-accent: #0c223f;
+        --aacr2-accent-soft: #e7eef7;
+        --aacr2-border: #d7dde6;
+        --aacr2-surface: #f4f7fb;
+        --aacr2-card: #ffffff;
+        --aacr2-muted: #5b6b7c;
+        --aacr2-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+    }
+    #custom-rules-editor {
+        width: 100%;
+        height: 400px;
+        border: 1px solid var(--aacr2-border);
+        font-family: monospace;
+        border-radius: 6px;
+    }
+    .exclusion-list {
+        width: 100%;
+        min-height: 60px;
+        border-radius: 6px;
+        border: 1px solid var(--aacr2-border);
+    }
+    .configuration-section {
+        background: var(--aacr2-card);
+        border: 1px solid var(--aacr2-border);
+        border-radius: 8px;
+        margin-bottom: 24px;
+        box-shadow: var(--aacr2-shadow);
+    }
+    .configuration-section legend {
+        background: var(--aacr2-accent);
+        color: white;
+        padding: 8px 16px;
+        border-radius: 8px 8px 0 0;
+        margin: 0;
+        width: 100%;
+        font-size: 13px;
+        letter-spacing: 0.3px;
+        text-transform: uppercase;
+    }
+    .configuration-section .rows {
+        padding: 18px 18px 12px 18px;
+        margin: 0;
+    }
+    .configuration-section ol.rows {
+        list-style: none;
+    }
+    .configuration-section .rows > li {
+        padding: 10px 0;
+        border-bottom: 1px dashed var(--aacr2-border);
+    }
+    .configuration-section .rows > li > label {
+        display: inline-block;
+        min-width: 260px;
+        margin-right: 8px;
+        vertical-align: top;
+        font-weight: 600;
+    }
+    .configuration-section .rows ul {
+        margin: 8px 0 8px 18px;
+        padding-left: 18px;
+    }
+    .configuration-section .rows p {
+        margin: 0 0 8px;
+    }
+    @media (max-width: 768px) {
+        .configuration-section .rows > li > label {
+            display: block;
+            min-width: 0;
+            margin-right: 0;
+            margin-bottom: 6px;
+        }
+    }
+    .configuration-section .rows > li:last-child {
+        border-bottom: none;
+    }
+    .hint {
+        color: var(--aacr2-muted);
+        font-size: 12px;
+        font-style: normal;
+        display: block;
+        margin-top: 3px;
+    }
+    .alert-success {
+        background: #dff0d8;
+        border: 1px solid #d6e9c6;
+        color: #3c763d;
+        padding: 10px;
+        border-radius: 4px;
+    }
+    .select2-container {
+        width: 100% !important;
+    }
+    #llm_api_provider {
+        max-width: 260px;
+    }
+    #llm_api_provider + .select2-container {
+        max-width: 260px;
+        width: 100% !important;
+    }
+    #llm_api_provider + .select2-container .select2-selection__rendered {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .user-table {
+        width: 100%;
+        border-collapse: collapse;
+        background: var(--aacr2-card);
+        border-radius: 8px;
+        overflow: hidden;
+    }
+    .user-table th, .user-table td {
+        border: 1px solid var(--aacr2-border);
+        padding: 8px;
+    }
+    .user-table th {
+        background-color: var(--aacr2-surface);
+    }
+    .user-table th.sortable {
+        cursor: pointer;
+    }
+    .table-tools {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 10px;
+        align-items: center;
+    }
+    .table-tools input[type="text"] {
+        max-width: 280px;
+    }
+    .progress-controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 10px;
+        align-items: center;
+    }
+    .disabled-checkbox {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+    .ai-key-indicator {
+        display: inline-block;
+        margin-left: 6px;
+        padding: 2px 6px;
+        border-radius: 10px;
+        font-size: 11px;
+        font-weight: 600;
+    }
+    .ai-key-indicator.is-set {
+        background: #dff0d8;
+        color: #3c763d;
+    }
+    .ai-key-indicator.is-empty {
+        background: #f5f5f5;
+        color: #8a8a8a;
+    }
+    .warning-text {
+        color: red;
+        font-weight: bold;
+    }
+    .ai-prompt-editor {
+        width: 100%;
+        min-height: 180px;
+        border-radius: 6px;
+        border: 1px solid var(--aacr2-border);
+        font-family: monospace;
+    }
+    .coverage-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 10px;
+    }
+    .coverage-table th, .coverage-table td {
+        border: 1px solid var(--aacr2-border);
+        padding: 6px 8px;
+        font-size: 12px;
+    }
+    .coverage-table th {
+        background: var(--aacr2-surface);
+    }
+    .coverage-status-covered { color: #3c763d; font-weight: bold; }
+    .coverage-status-excluded { color: #8a6d3b; font-weight: bold; }
+    .coverage-status-missing { color: #a94442; font-weight: bold; }
+    .openrouter-filters {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 6px;
+    }
+    .openrouter-filters label {
+        font-weight: 400;
+        font-size: 12px;
+        color: var(--aacr2-muted);
+    }
+    .aacr2-tabs.nav-tabs {
+        border-bottom: none;
+        gap: 12px;
+        margin-bottom: 6px;
+    }
+    .aacr2-tabs .nav-link {
+        border: none;
+        padding: 0;
+        background: transparent;
+        color: var(--aacr2-muted);
+        text-decoration: underline;
+        text-decoration-color: transparent;
+        text-underline-offset: 4px;
+        font-weight: 600;
+    }
+    .aacr2-tabs .nav-link:hover,
+    .aacr2-tabs .nav-link:focus {
+        color: var(--aacr2-accent);
+        text-decoration-color: var(--aacr2-accent);
+    }
+    .aacr2-tabs .nav-link.active {
+        color: var(--aacr2-accent);
+        text-decoration-color: var(--aacr2-accent);
+    }
+</style>
+<meta name="aacr2-plugin-csrf-token" content="[% csrf_token %]"/>
+</head>
+<body>
+[% INCLUDE 'header.inc' %]
+[% INCLUDE 'cat-search.inc' %]
+<div id="breadcrumbs">
+    <a href="/cgi-bin/koha/mainpage.pl">Home</a> ›
+    <a href="/cgi-bin/koha/plugins/plugins-home.pl">Plugins</a> ›
+    <a href="#" class="active">AACR2 MARC21 Intellisense + Guardrails Configuration</a>
+</div>
+<div class="main container-fluid">
+    <div class="row">
+        <div class="col-sm-10 col-sm-push-2">
+            <main>
+                <h1>AACR2 MARC21 Intellisense + Guardrails Configuration</h1>
+
+                [% IF settings.last_updated && !(save_errors && save_errors.size) %]
+                <div class="alert alert-success">
+                    <p><i class="fa fa-check-circle"></i> Last updated: [% settings.last_updated %]</p>
+                </div>
+                [% END %]
+                [% IF save_errors && save_errors.size %]
+                <div class="alert alert-danger">
+                    <p><strong>Unable to save configuration:</strong></p>
+                    <ul>
+                        [% FOREACH err IN save_errors %]
+                            <li>[% err %]</li>
+                        [% END %]
+                    </ul>
+                </div>
+                [% END %]
+                [% IF saved_successfully && !(save_errors && save_errors.size) %]
+                <div class="alert alert-success">
+                    <p><i class="fa fa-check-circle"></i> Settings saved successfully.</p>
+                </div>
+                [% END %]
+                [% IF update_info && update_info.update_available %]
+                <div class="alert alert-warning">
+                    <p><i class="fa fa-exclamation-circle"></i> New release available: [% update_info.latest_version %] (current [% current_version %]).</p>
+                    <p><a href="[% update_info.release_url %]" target="_blank" rel="noopener">View release on GitHub</a></p>
+                </div>
+                [% END %]
+                <div class="alert alert-info">
+                    <p><strong>Author LinkedIn:</strong> <a href="[% author_linkedin %]" target="_blank" rel="noopener">[% author_linkedin %]</a></p>
+                    <p><strong>Plugin GitHub:</strong> <a href="[% plugin_repo_url %]" target="_blank" rel="noopener">[% plugin_repo_url %]</a></p>
+                    <p><strong>Run Tool:</strong> <a href="/cgi-bin/koha/plugins/run.pl?class=[% CLASS %]&method=tool">Open tool page</a></p>
+                </div>
+
+                <form method="post" enctype="multipart/form-data" action="/cgi-bin/koha/plugins/run.pl?class=[% CLASS %]&method=[% METHOD %]" data-plugin-csrf-token="[% csrf_token %]">
+                    <input type="hidden" name="class" value="[% CLASS %]"/>
+                    <input type="hidden" name="method" value="[% METHOD %]"/>
+                    <input type="hidden" name="op" value="save_configuration"/>
+                    <input type="hidden" name="save" value="1"/>
+                    <input type="hidden" name="csrf_token" id="csrf_token" value="[% csrf_token %]"/>
+
+                    <ul class="nav nav-tabs aacr2-tabs" id="aacr2-config-tabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <a class="nav-link active" href="#aacr2-tab-general" data-bs-toggle="tab" role="tab" aria-controls="aacr2-tab-general" aria-selected="true">General</a>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <a class="nav-link" href="#aacr2-tab-ai" data-bs-toggle="tab" role="tab" aria-controls="aacr2-tab-ai" aria-selected="false">AI Assist</a>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <a class="nav-link" href="#aacr2-tab-rules" data-bs-toggle="tab" role="tab" aria-controls="aacr2-tab-rules" aria-selected="false">Rules &amp; Validation</a>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <a class="nav-link" href="#aacr2-tab-training" data-bs-toggle="tab" role="tab" aria-controls="aacr2-tab-training" aria-selected="false">Training</a>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <a class="nav-link" href="#aacr2-tab-advanced" data-bs-toggle="tab" role="tab" aria-controls="aacr2-tab-advanced" aria-selected="false">Advanced/Debug</a>
+                        </li>
+                    </ul>
+                    <div class="tab-content" style="margin-top: 16px;">
+                        <div class="tab-pane fade show active" id="aacr2-tab-general" role="tabpanel">
+                            <fieldset class="configuration-section">
+                                <legend>Basic Settings</legend>
+                                <ol class="rows">
+                                    <li>
+                                        <label for="enabled">Enable AACR2 Intellisense:</label>
+                                        <input type="checkbox" name="enabled" id="enabled" value="1" [% IF settings.enabled %]checked[% END %]/>
+                                        <span class="hint">Check to enable AACR2 rules and guardrails on cataloging forms</span>
+                                    </li>
+                                    <li>
+                                        <label for="auto_apply_punctuation">Auto-Apply Punctuation:</label>
+                                        <input type="checkbox" name="auto_apply_punctuation" id="auto_apply_punctuation" value="1" [% IF settings.auto_apply_punctuation %]checked[% END %]/>
+                                        <span class="hint">When disabled, punctuation is suggested only and must be applied explicitly.</span>
+                                    </li>
+                                    <li>
+                                        <label for="default_standard">Cataloging Standard:</label>
+                                        <select name="default_standard" id="default_standard" class="form-control" style="width: auto; display: inline-block;">
+                                            <option value="AACR2" selected>AACR2</option>
+                                        </select>
+                                        <span class="hint">AACR2 is enforced for MARC21 punctuation and guardrails.</span>
+                                    </li>
+                                </ol>
+                            </fieldset>
+                        </div>
+                        <div class="tab-pane fade" id="aacr2-tab-ai" role="tabpanel">
+                            <fieldset class="configuration-section">
+                                <legend>AI Assist (Optional)</legend>
+                                <ol class="rows">
+                                    <li>
+                                        <label for="ai_enable">Enable AI Assist:</label>
+                                        <input type="checkbox" name="ai_enable" id="ai_enable" value="1" [% IF settings.ai_enable %]checked[% END %]/>
+                                        <span class="hint">AI is advisory only. Nothing is auto-applied.</span>
+                                    </li>
+                                    <li>
+                                        <label for="ai_punctuation_explain">AI Field Guidance:</label>
+                                        <input type="checkbox" name="ai_punctuation_explain" id="ai_punctuation_explain" value="1" [% IF settings.ai_punctuation_explain %]checked[% END %]/>
+                                        <span class="hint">Explain AACR2 field rules for the selected field (same-field only).</span>
+                                    </li>
+                                    <li>
+                                        <label for="ai_subject_guidance">AI Subject Guidance:</label>
+                                        <input type="checkbox" name="ai_subject_guidance" id="ai_subject_guidance" value="1" [% IF settings.ai_subject_guidance %]checked[% END %]/>
+                                        <span class="hint">Suggest subject headings based on the title (guidance only).</span>
+                                    </li>
+                                    <li>
+                                        <label for="ai_callnumber_guidance">AI Call Number Guidance:</label>
+                                        <input type="checkbox" name="ai_callnumber_guidance" id="ai_callnumber_guidance" value="1" [% IF settings.ai_callnumber_guidance %]checked[% END %]/>
+                                        <span class="hint">Suggest classification numbers (used to build call numbers).</span>
+                                    </li>
+                                    <li>
+                                        <label for="lc_class_target">LC Classification Target (tag$subfield):</label>
+                                        <input type="text" name="lc_class_target" id="lc_class_target" value="[% settings.lc_class_target || '050$a' %]" class="form-control" style="width: 140px;"/>
+                                        <span class="hint">Where fallback LC classification suggestions should apply (e.g., 050$a or 090$a).</span>
+                                    </li>
+                                    <li>
+                                        <label for="llm_api_provider">AI Provider:</label>
+                                        [% SET ai_provider_norm = (settings.llm_api_provider || 'OpenRouter') | lower %]
+                                        <select name="llm_api_provider" id="llm_api_provider" class="form-control" style="width: 260px; max-width: 100%; display: inline-block;">
+                                            <option value="OpenRouter" [% IF ai_provider_norm == 'openrouter' %]selected[% END %]>OpenRouter (recommended)</option>
+                                            <option value="OpenAI" [% IF ai_provider_norm == 'openai' %]selected[% END %]>OpenAI</option>
+                                        </select>
+                                        <span class="hint">Choose which AI service to use.</span>
+                                    </li>
+                                    [% IF !encryption_ready %]
+                                    <li>
+                                        <div class="alert alert-warning" style="margin: 6px 0;">
+                                            <strong>Encryption key missing:</strong>
+                                            Koha encryption_key is not configured in koha-conf.xml. API keys cannot be saved until it is set.
+                                        </div>
+                                    </li>
+                                    [% END %]
+                                    <li id="ai-api-key-row"
+                                        data-openai-set="[% llm_api_key_ready ? 1 : 0 %]"
+                                        data-openrouter-set="[% openrouter_api_key_ready ? 1 : 0 %]"
+                                        data-openai-present="[% llm_api_key_set ? 1 : 0 %]"
+                                        data-openrouter-present="[% openrouter_api_key_set ? 1 : 0 %]">
+                                        <label for="ai_api_key" id="ai-api-key-label">API Key:</label>
+                                        <span id="ai-api-key-indicator" class="ai-key-indicator"></span>
+                                        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                                            <input type="password" name="ai_api_key" id="ai_api_key" value="" class="form-control" style="width: 300px;" autocomplete="new-password"/>
+                                            <button type="button" class="btn btn-xs btn-danger" id="clear-ai-key" disabled>Clear key</button>
+                                        </div>
+                                        <input type="hidden" name="ai_api_key_clear" id="ai_api_key_clear" value="0"/>
+                                        <span class="hint" id="ai-api-key-hint"></span>
+                                    </li>
+                                    <li id="ai-model-row">
+                                        <label for="ai_model">Model:</label>
+                                        <div class="table-tools">
+                                            <input type="text" id="ai-model-search" class="form-control input-sm" placeholder="Search models..."/>
+                                            <select name="ai_model" id="ai_model" class="form-control" style="width: 300px;"></select>
+                                            <button type="button" class="btn btn-xs btn-default" id="refresh-ai-models">
+                                                <i class="fa fa-refresh"></i> Refresh
+                                            </button>
+                                        </div>
+                                        <div class="openrouter-filters openrouter-only">
+                                            <label><input type="checkbox" id="openrouter-filter-text"> text</label>
+                                            <label><input type="checkbox" id="openrouter-filter-image"> image</label>
+                                            <label><input type="checkbox" id="openrouter-filter-input"> input</label>
+                                            <label><input type="checkbox" id="openrouter-filter-output"> output</label>
+                                            <label><input type="checkbox" id="openrouter-filter-free"> free</label>
+                                        </div>
+                                        <span class="hint" id="ai-model-hint"></span>
+                                    </li>
+                                    <li>
+                                        <label for="ai_request_mode">AI Request Mode:</label>
+                                        <select name="ai_request_mode" id="ai_request_mode" class="form-control" style="width: 260px;">
+                                            [% SET ai_request_mode_norm = (settings.ai_request_mode || 'server') | lower %]
+                                            <option value="server" [% IF ai_request_mode_norm == 'server' %]selected[% END %]>Server (Koha)</option>
+                                            <option value="direct" [% IF ai_request_mode_norm == 'direct' || ai_request_mode_norm == 'browser' %]selected[% END %]>Direct browser</option>
+                                        </select>
+                                        <span class="hint" id="ai-request-mode-hint">Server mode keeps provider keys on Koha. Direct browser mode requires a browser-local API key.</span>
+                                    </li>
+                                    <li>
+                                        <label for="ai_strict_json_mode">Structured JSON AI Output Mode:</label>
+                                        <input type="checkbox" name="ai_strict_json_mode" id="ai_strict_json_mode" value="1" [% IF settings.ai_strict_json_mode %]checked[% END %]/>
+                                        <span class="hint">When enabled, default prompts request strict JSON output for cleaner parsing/extraction. Some models may be slower or less reliable in strict mode.</span>
+                                    </li>
+                                    <li>
+                                        <button type="button" class="btn btn-default" id="ai-test-connection">
+                                            <i class="fa fa-plug"></i> Test Connection
+                                        </button>
+                                        <span class="hint">Sends a lightweight request to confirm connectivity.</span>
+                                    </li>
+                                    <li>
+                                        <label for="ai_prompt_default">Default AI Prompt (punctuation guidance):</label>
+                                        <textarea name="ai_prompt_default" id="ai_prompt_default" class="ai-prompt-editor form-control" maxlength="[% ai_prompt_max_length || 16384 %]">[% settings.ai_prompt_default | html %]</textarea>
+                                        <span class="hint">Used for punctuation suggestions. Plain-text response recommended. Max [% ai_prompt_max_length || 16384 %] chars.</span>
+                                    </li>
+                                    <li>
+                                        <label for="ai_prompt_cataloging">Cataloging Prompt (classification/subjects):</label>
+                                        <textarea name="ai_prompt_cataloging" id="ai_prompt_cataloging" class="ai-prompt-editor form-control" maxlength="[% ai_prompt_max_length || 16384 %]">[% settings.ai_prompt_cataloging | html %]</textarea>
+                                        <span class="hint">Used for record-level cataloging guidance. Leave blank to use the shipped default. `{{source_text}}` is supported.</span>
+                                    </li>
+                                    <li>
+                                        <button type="button" class="btn btn-default btn-sm" id="reset-ai-prompts">
+                                            <i class="fa fa-undo"></i> Reset Prompts To Defaults
+                                        </button>
+                                        <span class="hint">Restores shipped prompts in both textareas. Save configuration to persist.</span>
+                                    </li>
+                                </ol>
+                            </fieldset>
+                        </div>
+                        <div class="tab-pane fade" id="aacr2-tab-rules" role="tabpanel">
+                            <fieldset class="configuration-section">
+                                <legend>AACR2 Rules &amp; Live Validation</legend>
+                                <ol class="rows">
+                                    <li>
+                                        <label for="enforce_aacr2_guardrails">Enforce AACR2 Guardrails:</label>
+                                        <input type="checkbox" name="enforce_aacr2_guardrails" id="enforce_aacr2_guardrails" value="1" [% IF settings.enforce_aacr2_guardrails %]checked[% END %]/>
+                                        <span class="hint">Lock AACR2 rules and MARC21 placement with hard guards and warnings.</span>
+                                    </li>
+                                    <li>
+                                        <label for="enable_live_validation">Enable Live Validation:</label>
+                                        <input type="checkbox" name="enable_live_validation" id="enable_live_validation" value="1" [% IF settings.enable_live_validation %]checked[% END %]/>
+                                        <span class="hint">Highlight violations in real time as catalogers type.</span>
+                                    </li>
+                                    <li>
+                                        <label for="block_save_on_error">Block Save on Errors:</label>
+                                        <input type="checkbox" name="block_save_on_error" id="block_save_on_error" value="1" [% IF settings.block_save_on_error %]checked[% END %]/>
+                                        <span class="hint">Disable record save when AACR2 guardrail violations remain.</span>
+                                    </li>
+                                    <li>
+                                        <label for="required_fields">Required AACR2 Fields:</label>
+                                        <input type="text" name="required_fields" id="required_fields" value="[% settings.required_fields || '100a,245a,260c,300a,050a' %]" class="form-control"/>
+                                        <span class="hint">Comma-separated MARC subfields to enforce (e.g., 100a,245a,260c,300a,050a).</span>
+                                    </li>
+                                    <li>
+                                        <label for="excluded_tags">Excluded Tags (Optional):</label>
+                                        <input type="text" name="excluded_tags" id="excluded_tags" value="[% settings.excluded_tags %]" class="form-control"/>
+                                        <span class="hint">Comma-separated MARC tags/subfields to skip from automation (e.g., 590a,9XX).</span>
+                                    </li>
+                                    <li>
+                                        <label for="strict_coverage_mode">Strict Coverage Mode:</label>
+                                        <input type="checkbox" name="strict_coverage_mode" id="strict_coverage_mode" value="1" [% IF settings.strict_coverage_mode %]checked[% END %]/>
+                                        <span class="hint">Warn when a field has no AACR2 rule defined.</span>
+                                    </li>
+                                    <li>
+                                        <label for="enable_local_fields">Enable Local (9XX) Fields:</label>
+                                        <input type="checkbox" name="enable_local_fields" id="enable_local_fields" value="1" [% IF settings.enable_local_fields %]checked[% END %]/>
+                                        <span class="hint">Default is excluded. Enable to apply AACR2 rules to local fields.</span>
+                                    </li>
+                                    <li>
+                                        <label for="local_fields_allowlist">Local Fields Allowlist:</label>
+                                        <input type="text" name="local_fields_allowlist" id="local_fields_allowlist" value="[% settings.local_fields_allowlist %]" class="form-control"/>
+                                        <span class="hint">Comma-separated local tags/subfields to include (e.g., 9XX,952a).</span>
+                                    </li>
+                                </ol>
+                            </fieldset>
+                            <fieldset class="configuration-section">
+                                <legend>Custom AACR2 Rules</legend>
+                                <ol class="rows">
+                                    <li>
+                                        <label for="custom-rules-editor">Custom Rules (JSON):</label>
+                                        <textarea name="custom_rules" id="custom-rules-editor">[% settings.custom_rules || '{}' %]</textarea>
+                                        <span class="hint">Custom rules are optional. Use {"rules":[{...}]} when adding rules.</span>
+                                    </li>
+                                    <li>
+                                        <label>Import/Export Rules:</label>
+                                        <div style="margin-top: 5px;">
+                                            <input type="file" name="rules_file" id="rules_file" accept=".json" class="form-control" style="width: auto; display: inline-block;"/>
+                                            <button type="submit" name="import_rules" value="1" class="btn btn-default">
+                                                <i class="fa fa-upload"></i> Import Rules
+                                            </button>
+                                            <button type="submit" name="export_rules" value="1" class="btn btn-default">
+                                                <i class="fa fa-download"></i> Export Rules
+                                            </button>
+                                        </div>
+                                        <span class="hint">Upload a .json file to import rules or download current rules</span>
+                                    </li>
+                                </ol>
+                            </fieldset>
+                            <fieldset class="configuration-section">
+                                <legend>Coverage Report</legend>
+                                <div class="rows">
+                                    <p>Baseline rule pack version: <strong>[% rules_version || 'unknown' %]</strong></p>
+                                    <p>
+                                        Covered: <strong>[% coverage_summary.covered %]</strong> ·
+                                        Excluded: <strong>[% coverage_summary.excluded %]</strong> ·
+                                        Not covered: <strong>[% coverage_summary.not_covered %]</strong>
+                                    </p>
+                                    <span class="hint">This report scans active MARC frameworks and compares tag/subfield coverage.</span>
+                                    [% FOREACH framework IN coverage_report %]
+                                        <details style="margin-top: 10px;">
+                                            <summary>
+                                                [% framework.frameworktext || framework.frameworkcode || 'Default' %]
+                                                (Total: [% framework.counts.total %], Covered: [% framework.counts.covered %], Excluded: [% framework.counts.excluded %], Missing: [% framework.counts.not_covered %])
+                                            </summary>
+                                            <table class="coverage-table">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Tag</th>
+                                                        <th>Subfield</th>
+                                                        <th>Status</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    [% FOREACH field IN framework.fields %]
+                                                        <tr>
+                                                            <td>[% field.tag %]</td>
+                                                            <td>[% field.subfield %]</td>
+                                                            <td>
+                                                                [% IF field.status == 'covered' %]
+                                                                    <span class="coverage-status-covered">Covered</span>
+                                                                [% ELSIF field.status == 'excluded' %]
+                                                                    <span class="coverage-status-excluded">Excluded</span>
+                                                                [% ELSE %]
+                                                                    <span class="coverage-status-missing">Not covered</span>
+                                                                [% END %]
+                                                            </td>
+                                                        </tr>
+                                                    [% END %]
+                                                </tbody>
+                                            </table>
+                                        </details>
+                                    [% END %]
+                                    <div style="margin-top: 15px;">
+                                        <label for="coverage-stubs">Recommended Rule Stubs (JSON):</label>
+                                        <textarea id="coverage-stubs" class="form-control" rows="8" readonly>[% coverage_stubs_json %]</textarea>
+                                        <span class="hint">Copy and paste into Custom Rules to extend coverage.</span>
+                                    </div>
+                                </div>
+                            </fieldset>
+                        </div>
+                        <div class="tab-pane fade" id="aacr2-tab-training" role="tabpanel">
+                            <fieldset class="configuration-section">
+                                <legend>Interactive Training Guide</legend>
+                                <ol class="rows">
+                                    <li>
+                                        <label for="enable_guide">Enable Interactive AACR2 Guide:</label>
+                                        <input type="checkbox" name="enable_guide" id="enable_guide" value="1" [% IF settings.enable_guide %]checked[% END %]/>
+                                        <span class="hint">Enable step-by-step AACR2 guide for training.</span>
+                                    </li>
+                                    <li>
+                                        <label for="guide_users">Exclude Users from Guide:</label>
+                                        <div class="table-tools">
+                                            <input type="text" id="guide-user-search" class="form-control input-sm" placeholder="Search users..."/>
+                                            <select id="guide-user-filter" class="form-control input-sm" style="width: 160px;">
+                                                <option value="all">All</option>
+                                                <option value="selected">Selected</option>
+                                                <option value="unselected">Unselected</option>
+                                            </select>
+                                        </div>
+                                        <table class="user-table" id="guide-users-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>
+                                                        <input type="checkbox" id="selectAllGuideUsers" onclick="toggleSelectAll('guide_users', this.checked)"/>
+                                                    </th>
+                                                    <th class="sortable" data-sort="userid">User ID</th>
+                                                    <th class="sortable" data-sort="name">Name</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                [% FOREACH user IN users %]
+                                                <tr>
+                                                    <td>
+                                                        <input type="checkbox" name="guide_users" value="[% user.userid %]"
+                                                        [% FOREACH selected_user IN settings.guide_users.split(',') %]
+                                                            [% IF selected_user.trim == user.userid %]checked[% END %]
+                                                        [% END %]
+                                                        [% IF !settings.enable_guide %]disabled class="disabled-checkbox"[% END %]>
+                                                    </td>
+                                                    <td>[% user.userid %]</td>
+                                                    <td>[% user.name %]</td>
+                                                </tr>
+                                                [% END %]
+                                            </tbody>
+                                        </table>
+                                        <span class="hint">Select users to exclude from accessing the guide (multiple selections allowed)</span>
+                                    </li>
+                                    <li>
+                                        <label for="guide_exclusion_list">Manual Exclusion List (Optional):</label>
+                                        <textarea name="guide_exclusion_list" id="guide_exclusion_list" class="exclusion-list form-control">[% settings.guide_exclusion_list %]</textarea>
+                                        <span class="hint">Comma-separated usernames to exclude manually (e.g., user1,user2). Matches against loggedinusername class text content.</span>
+                                    </li>
+                                </ol>
+                            </fieldset>
+                            <fieldset class="configuration-section">
+                                <legend>Internship Training Mode</legend>
+                                <ol class="rows">
+                                    <li>
+                                        <label for="internship_mode">Enable Internship Mode:</label>
+                                        <input type="checkbox" name="internship_mode" id="internship_mode" value="1" [% IF settings.internship_mode %]checked[% END %]/>
+                                        <span class="hint">Disable auto-punctuation for selected users to support manual learning</span>
+                                    </li>
+                                    <li>
+                                        <label for="internship_users">Select Internship Users:</label>
+                                        <div class="table-tools">
+                                            <input type="text" id="internship-user-search" class="form-control input-sm" placeholder="Search users..."/>
+                                            <select id="internship-user-filter" class="form-control input-sm" style="width: 160px;">
+                                                <option value="all">All</option>
+                                                <option value="selected">Selected</option>
+                                                <option value="unselected">Unselected</option>
+                                            </select>
+                                        </div>
+                                        <table class="user-table" id="internship-users-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>
+                                                        <input type="checkbox" id="selectAllInternshipUsers" onclick="toggleSelectAll('internship_users', this.checked)"/>
+                                                    </th>
+                                                    <th class="sortable" data-sort="userid">User ID</th>
+                                                    <th class="sortable" data-sort="name">Name</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                [% FOREACH user IN users %]
+                                                <tr>
+                                                    <td>
+                                                        <input type="checkbox" name="internship_users" value="[% user.userid %]"
+                                                        [% FOREACH selected_user IN settings.internship_users.split(',') %]
+                                                            [% IF selected_user.trim == user.userid %]checked[% END %]
+                                                        [% END %]
+                                                        [% IF !settings.internship_mode %]disabled class="disabled-checkbox"[% END %]>
+                                                    </td>
+                                                    <td>[% user.userid %]</td>
+                                                    <td>[% user.name %]</td>
+                                                </tr>
+                                                [% END %]
+                                            </tbody>
+                                        </table>
+                                        <span class="hint">Select users to exclude from auto-punctuation (multiple selections allowed)</span>
+                                    </li>
+                                    <li>
+                                        <label for="internship_exclusion_list">Manual Exclusion List:</label>
+                                        <textarea name="internship_exclusion_list" id="internship_exclusion_list" class="exclusion-list form-control">[% settings.internship_exclusion_list %]</textarea>
+                                        <span class="hint">Comma-separated usernames to exclude manually (e.g., user1,user2). Matches against loggedinusername class text content.</span>
+                                    </li>
+                                </ol>
+                            </fieldset>
+                            <fieldset class="configuration-section">
+                                <legend>Training Progress</legend>
+                                <div class="rows">
+                                    <div class="progress-controls">
+                                        <input type="text" id="progress-search" class="form-control input-sm" placeholder="Search users..."/>
+                                        <select id="progress-status-filter" class="form-control input-sm" style="width: 180px;">
+                                            <option value="all">All statuses</option>
+                                            <option value="completed">Completed</option>
+                                            <option value="in_progress">In progress</option>
+                                            <option value="not_started">Not started</option>
+                                            <option value="no_data">No data</option>
+                                        </select>
+                                        <select id="progress-tier-filter" class="form-control input-sm" style="width: 170px;">
+                                            <option value="all">All tiers</option>
+                                        </select>
+                                        <select id="progress-module-filter" class="form-control input-sm" style="width: 260px;">
+                                            <option value="all">All modules</option>
+                                        </select>
+                                        <button type="button" class="btn btn-default btn-sm" id="progress-refresh">
+                                            <i class="fa fa-refresh"></i> Refresh
+                                        </button>
+                                        <button type="button" class="btn btn-default btn-sm" id="progress-export-csv">
+                                            <i class="fa fa-download"></i> Export CSV
+                                        </button>
+                                        <button type="button" class="btn btn-default btn-sm" id="progress-export-excel">
+                                            <i class="fa fa-table"></i> Export Excel
+                                        </button>
+                                        <label style="font-weight: normal;">
+                                            <input type="checkbox" id="progress-auto-refresh" checked/> Auto-refresh (30s)
+                                        </label>
+                                    </div>
+                                    <table class="user-table" id="aacr2-progress-table">
+                                        <thead>
+                                            <tr>
+                                                <th class="sortable" data-sort="userid">User ID</th>
+                                                <th class="sortable" data-sort="name">Name</th>
+                                                <th class="sortable" data-sort="tier">Tier</th>
+                                                <th class="sortable" data-sort="module">Module</th>
+                                                <th class="sortable" data-sort="steps_completed">Steps Done</th>
+                                                <th class="sortable" data-sort="steps_skipped">Steps Skipped</th>
+                                                <th class="sortable" data-sort="summary">Summary</th>
+                                                <th class="sortable" data-sort="updated_at">Last Updated</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr>
+                                                <td colspan="8">Loading progress...</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                    <span class="hint">Progress updates when staff use the AACR2 training guide.</span>
+                                </div>
+                            </fieldset>
+                        </div>
+                        <div class="tab-pane fade" id="aacr2-tab-advanced" role="tabpanel">
+                            <fieldset class="configuration-section">
+                                <legend>Debug &amp; Preview</legend>
+                                <ol class="rows">
+                                    <li>
+                                        <label for="debug_mode">Debug Mode:</label>
+                                        <input type="checkbox" name="debug_mode" id="debug_mode" value="1" [% IF settings.debug_mode %]checked[% END %]/>
+                                        <span class="hint">Enable console logging for troubleshooting (only enable if needed)</span>
+                                    </li>
+                                    <li>
+                                        <label for="ai_debug_include_raw_response">Include Raw AI Provider Debug Payload:</label>
+                                        <input type="checkbox" name="ai_debug_include_raw_response" id="ai_debug_include_raw_response" value="1" [% IF settings.ai_debug_include_raw_response %]checked[% END %]/>
+                                        <span class="hint">When enabled, API responses may include sanitized/truncated raw provider text for debugging.</span>
+                                    </li>
+                                    <li>
+                                        <label for="ai_payload_preview">Enable Payload Preview:</label>
+                                        <input type="checkbox" name="ai_payload_preview" id="ai_payload_preview" value="1" [% IF settings.ai_payload_preview %]checked[% END %]/>
+                                        <span class="hint">Lets admins preview what will be sent to the AI.</span>
+                                    </li>
+                                </ol>
+                            </fieldset>
+                            <fieldset class="configuration-section">
+                                <legend>AI Safety &amp; Context</legend>
+                                <ol class="rows">
+                                    <li>
+                                        <label for="ai_redaction_rules">Redaction Rules:</label>
+                                        <input type="text" name="ai_redaction_rules" id="ai_redaction_rules" value="[% settings.ai_redaction_rules %]" class="form-control"/>
+                                        <span class="hint">Tags/subfields to hide before sending to AI (e.g., 9XX,952,5XX).</span>
+                                    </li>
+                                    <li>
+                                        <label for="ai_redact_856_querystrings">Redact 856 $u Querystrings:</label>
+                                        <input type="checkbox" name="ai_redact_856_querystrings" id="ai_redact_856_querystrings" value="1" [% IF settings.ai_redact_856_querystrings %]checked[% END %]/>
+                                        <span class="hint">Hide URLs with query strings to avoid leaking sensitive links.</span>
+                                    </li>
+                                    <li>
+                                        <label for="ai_context_mode">AI Context Scope:</label>
+                                        <select name="ai_context_mode" id="ai_context_mode" class="form-control" style="width: 240px;">
+                                            <option value="tag_only" [% IF settings.ai_context_mode == 'tag_only' %]selected[% END %]>Tag only (default)</option>
+                                            <option value="tag_plus_neighbors" [% IF settings.ai_context_mode == 'tag_plus_neighbors' %]selected[% END %]>Tag + neighboring fields</option>
+                                            <option value="full" [% IF settings.ai_context_mode == 'full' %]selected[% END %]>Full record (redacted)</option>
+                                        </select>
+                                        <span class="hint">How much of the record is shared with AI. Tag only is safest.</span>
+                                    </li>
+                                </ol>
+                            </fieldset>
+                            <fieldset class="configuration-section">
+                                <legend>AI Tuning &amp; Limits</legend>
+                                <ol class="rows">
+                                    <li>
+                                        <label for="ai_reasoning_effort">Reasoning/Thinking Effort (OpenAI reasoning models only):</label>
+                                        [% SET reasoning_effort = (settings.ai_reasoning_effort || 'low') | lower %]
+                                        <select name="ai_reasoning_effort" id="ai_reasoning_effort" class="form-control" style="width: 180px;">
+                                            <option value="none" [% IF reasoning_effort == 'none' %]selected[% END %]>None</option>
+                                            <option value="low" [% IF reasoning_effort == 'low' %]selected[% END %]>Low</option>
+                                            <option value="medium" [% IF reasoning_effort == 'medium' %]selected[% END %]>Medium</option>
+                                            <option value="high" [% IF reasoning_effort == 'high' %]selected[% END %]>High</option>
+                                        </select>
+                                        <span class="hint">Applies only to OpenAI reasoning-capable models (e.g., o-series). Higher effort can increase latency and cost.</span>
+                                    </li>
+                                    <li>
+                                        <label for="ai_timeout">Timeout (seconds):</label>
+                                        <input type="number" name="ai_timeout" id="ai_timeout" value="[% settings.ai_timeout %]" class="form-control" style="width: 120px;"/>
+                                        <span class="hint">How long to wait for the AI before giving up.</span>
+                                    </li>
+                                    <li>
+                                        <label for="ai_max_output_tokens">Max Output Tokens:</label>
+                                        <input type="number" name="ai_max_output_tokens" id="ai_max_output_tokens" value="[% settings.ai_max_output_tokens || settings.ai_max_tokens || 4096 %]" class="form-control" style="width: 120px;"/>
+                                        <span class="hint">Higher limits can improve completeness but increase cost/latency. If output is truncated, raise this or reduce reasoning effort.</span>
+                                    </li>
+                                    <li>
+                                        <label for="ai_temperature">Temperature:</label>
+                                        <input type="text" name="ai_temperature" id="ai_temperature" value="[% settings.ai_temperature %]" class="form-control" style="width: 120px;"/>
+                                        <span class="hint">Lower = more consistent; higher = more creative.</span>
+                                    </li>
+                                    <li>
+                                        <label for="ai_confidence_threshold">Ghost Confidence Threshold:</label>
+                                        <input type="text" name="ai_confidence_threshold" id="ai_confidence_threshold" value="[% settings.ai_confidence_threshold %]" class="form-control" style="width: 120px;"/>
+                                        <span class="hint">Only show AI ghost text when confidence is this high.</span>
+                                    </li>
+                                    <li>
+                                        <label for="ai_rate_limit_per_minute">Rate Limit (per minute):</label>
+                                        <input type="number" name="ai_rate_limit_per_minute" id="ai_rate_limit_per_minute" value="[% settings.ai_rate_limit_per_minute %]" class="form-control" style="width: 120px;"/>
+                                        <span class="hint">Max AI requests per minute per staff user.</span>
+                                    </li>
+                                    <li>
+                                        <label for="ai_cache_ttl_seconds">Cache TTL (seconds):</label>
+                                        <input type="number" name="ai_cache_ttl_seconds" id="ai_cache_ttl_seconds" value="[% settings.ai_cache_ttl_seconds %]" class="form-control" style="width: 120px;"/>
+                                        <span class="hint">Reuse AI answers for this many seconds to reduce costs.</span>
+                                    </li>
+                                    <li>
+                                        <label for="ai_cache_max_entries">Cache Max Entries:</label>
+                                        <input type="number" name="ai_cache_max_entries" id="ai_cache_max_entries" value="[% settings.ai_cache_max_entries %]" class="form-control" style="width: 120px;"/>
+                                        <span class="hint">Upper limit for cached AI responses.</span>
+                                    </li>
+                                    <li>
+                                        <label for="ai_retry_count">Retries:</label>
+                                        <input type="number" name="ai_retry_count" id="ai_retry_count" value="[% settings.ai_retry_count %]" class="form-control" style="width: 120px;"/>
+                                        <span class="hint">How many times to retry when the AI fails.</span>
+                                    </li>
+                                    <li>
+                                        <label for="ai_circuit_breaker_threshold">Circuit Breaker Threshold:</label>
+                                        <input type="number" name="ai_circuit_breaker_threshold" id="ai_circuit_breaker_threshold" value="[% settings.ai_circuit_breaker_threshold %]" class="form-control" style="width: 120px;"/>
+                                        <span class="hint">Pause AI after this many consecutive failures.</span>
+                                    </li>
+                                    <li>
+                                        <label for="ai_circuit_breaker_timeout">Circuit Breaker Timeout (seconds):</label>
+                                        <input type="number" name="ai_circuit_breaker_timeout" id="ai_circuit_breaker_timeout" value="[% settings.ai_circuit_breaker_timeout %]" class="form-control" style="width: 120px;"/>
+                                        <span class="hint">How long to pause AI after failures.</span>
+                                    </li>
+                                    <li>
+                                        <label for="ai_circuit_breaker_window_seconds">Circuit Breaker Window (seconds):</label>
+                                        <input type="number" name="ai_circuit_breaker_window_seconds" id="ai_circuit_breaker_window_seconds" value="[% settings.ai_circuit_breaker_window_seconds %]" class="form-control" style="width: 120px;"/>
+                                        <span class="hint">Time window for counting failures.</span>
+                                    </li>
+                                    <li>
+                                        <label for="ai_circuit_breaker_failure_rate">Circuit Breaker Failure Rate:</label>
+                                        <input type="text" name="ai_circuit_breaker_failure_rate" id="ai_circuit_breaker_failure_rate" value="[% settings.ai_circuit_breaker_failure_rate %]" class="form-control" style="width: 120px;"/>
+                                        <span class="hint">Pause AI if failure rate exceeds this fraction (e.g., 0.5 = 50%).</span>
+                                    </li>
+                                    <li>
+                                        <label for="ai_circuit_breaker_min_samples">Circuit Breaker Min Samples:</label>
+                                        <input type="number" name="ai_circuit_breaker_min_samples" id="ai_circuit_breaker_min_samples" value="[% settings.ai_circuit_breaker_min_samples %]" class="form-control" style="width: 120px;"/>
+                                        <span class="hint">Minimum requests before failure rate can trigger.</span>
+                                    </li>
+                                </ol>
+                            </fieldset>
+                        </div>
+                    </div>
+                    <fieldset class="action">
+                        <input type="submit" value="Save Configuration" class="btn btn-primary"/>
+                        <a href="/cgi-bin/koha/plugins/run.pl?class=[% CLASS %]&method=tool" class="btn btn-default">Cancel</a>
+                    </fieldset>
+                </form>
+            </main>
+        </div>
+        <div class="col-sm-2 col-sm-pull-10">
+            <aside>
+                [% INCLUDE 'tools-menu.inc' %]
+            </aside>
+        </div>
+    </div>
+</div>
+<script>
+    if (!window.toastr) {
+        window.toastr = {
+            success: function(message) { console.log(message); },
+            error: function(message) { console.error(message); },
+            warning: function(message) { console.warn(message); },
+            info: function(message) { console.info(message); }
+        };
+    }
+
+    var editorTextarea = document.getElementById('custom-rules-editor');
+    var editor = {
+        getValue: function() {
+            return editorTextarea ? (editorTextarea.value || '') : '';
+        },
+        setValue: function(value) {
+            if (editorTextarea) editorTextarea.value = value == null ? '' : String(value);
+        }
+    };
+    if (window.CodeMirror && editorTextarea) {
+        editor = CodeMirror.fromTextArea(editorTextarea, {
+            mode: 'application/json',
+            lineNumbers: true,
+            theme: 'default',
+            lint: true,
+            autoCloseBrackets: true,
+            matchBrackets: true,
+            indentWithTabs: false,
+            indentUnit: 2
+        });
+    }
+    var draftKey = 'aacr2-config-draft-v1';
+    var draftState = null;
+    var draftTimer = null;
+
+    function escapeSelector(value) {
+        if (window.CSS && CSS.escape) return CSS.escape(value);
+        return value.replace(/[^\w-]/g, '\\$&');
+    }
+
+    function shouldPersistField(el) {
+        var name = el.getAttribute('name') || '';
+        if (!name) return false;
+        if (/api_key/i.test(name)) return false;
+        if (name === 'save' || name === 'class' || name === 'method') return false;
+        var type = (el.getAttribute('type') || '').toLowerCase();
+        if (type === 'password' || type === 'file' || type === 'hidden') return false;
+        return true;
+    }
+
+    function collectDraftState() {
+        var values = {};
+        $('form').find('input, select, textarea').each(function() {
+            if (!shouldPersistField(this)) return;
+            var name = this.getAttribute('name');
+            var $el = $(this);
+            var type = (this.getAttribute('type') || '').toLowerCase();
+            if (type === 'checkbox') {
+                values[name] = $el.prop('checked');
+                return;
+            }
+            if (type === 'radio') {
+                if ($el.prop('checked')) values[name] = $el.val();
+                return;
+            }
+            if ($el.is('select[multiple]')) {
+                values[name] = $el.val() || [];
+                return;
+            }
+            values[name] = $el.val();
+        });
+        values.__activeTab = $('#aacr2-config-tabs .nav-link.active').attr('href') || '';
+        return { ts: Date.now(), values: values };
+    }
+
+    function applyDraftState(state) {
+        if (!state) return;
+        var values = state.values || state;
+        if (!values || typeof values !== 'object') return;
+        Object.keys(values).forEach(function(name) {
+            if (name === '__activeTab') return;
+            var selector = '[name="' + escapeSelector(name) + '"]';
+            var $els = $(selector);
+            if (!$els.length) return;
+            var type = ($els.attr('type') || '').toLowerCase();
+            var value = values[name];
+            if (type === 'checkbox') {
+                $els.prop('checked', !!value);
+                return;
+            }
+            if (type === 'radio') {
+                $els.filter('[value="' + value + '"]').prop('checked', true);
+                return;
+            }
+            if ($els.is('select[multiple]')) {
+                $els.val(Array.isArray(value) ? value : []).trigger('change');
+                return;
+            }
+            $els.val(value);
+        });
+        if (values.custom_rules && editor) {
+            editor.setValue(values.custom_rules);
+        }
+        if (values.__activeTab) {
+            var $tab = $('#aacr2-config-tabs a[href="' + values.__activeTab + '"]');
+            if ($tab.length) $tab.trigger('click');
+        }
+    }
+
+    function saveDraftSoon() {
+        if (draftTimer) clearTimeout(draftTimer);
+        draftTimer = setTimeout(function() {
+            try {
+                var snapshot = collectDraftState();
+                sessionStorage.setItem(draftKey, JSON.stringify(snapshot));
+            } catch (err) {
+                // ignore storage failures
+            }
+        }, 150);
+    }
+
+    function loadDraftState() {
+        try {
+            var raw = sessionStorage.getItem(draftKey);
+            return raw ? JSON.parse(raw) : null;
+        } catch (err) {
+            return null;
+        }
+    }
+
+    function clearDraftState() {
+        try {
+            sessionStorage.removeItem(draftKey);
+        } catch (err) {
+            // ignore storage failures
+        }
+    }
+
+    // Toggle select all checkboxes
+    function toggleSelectAll(className, checked) {
+        $('input[type="checkbox"][name="' + className + '"]').prop('checked', checked);
+    }
+
+    // Toggle user checkboxes based on mode enable checkbox
+    function toggleUserCheckboxes() {
+        var isGuideEnabled = $('#enable_guide').is(':checked');
+        var isInternshipEnabled = $('#internship_mode').is(':checked');
+
+        $('input[name="guide_users"]')
+            .prop('disabled', !isGuideEnabled)
+            .toggleClass('disabled-checkbox', !isGuideEnabled);
+        $('input[name="internship_users"]')
+            .prop('disabled', !isInternshipEnabled)
+            .toggleClass('disabled-checkbox', !isInternshipEnabled);
+        $('#selectAllGuideUsers')
+            .prop('disabled', !isGuideEnabled)
+            .toggleClass('disabled-checkbox', !isGuideEnabled);
+        $('#selectAllInternshipUsers')
+            .prop('disabled', !isInternshipEnabled)
+            .toggleClass('disabled-checkbox', !isInternshipEnabled);
+
+        if (!isGuideEnabled) {
+            $('input[name="guide_users"]').prop('checked', false);
+            $('#selectAllGuideUsers').prop('checked', false);
+        }
+
+        if (!isInternshipEnabled) {
+            $('input[name="internship_users"]').prop('checked', false);
+            $('#selectAllInternshipUsers').prop('checked', false);
+        }
+    }
+
+    function normalizeText(value) {
+        return (value || '').toString().toLowerCase();
+    }
+
+    function filterUserTableRows(inputSelector, filterSelector, tableSelector) {
+        var query = normalizeText($(inputSelector).val());
+        var filter = $(filterSelector).val() || 'all';
+        $(tableSelector).find('tbody tr').each(function() {
+            var text = normalizeText($(this).text());
+            var checked = $(this).find('input[type="checkbox"]').is(':checked');
+            var matchesQuery = !query || text.indexOf(query) !== -1;
+            var matchesFilter = filter === 'all' || (filter === 'selected' && checked) || (filter === 'unselected' && !checked);
+            $(this).toggle(matchesQuery && matchesFilter);
+        });
+    }
+
+    function sortTableRows(tableSelector, columnIndex, asc) {
+        var $tbody = $(tableSelector).find('tbody');
+        var rows = $tbody.find('tr').get();
+        rows.sort(function(a, b) {
+            var textA = normalizeText($(a).children('td').eq(columnIndex).text());
+            var textB = normalizeText($(b).children('td').eq(columnIndex).text());
+            if (textA < textB) return asc ? -1 : 1;
+            if (textA > textB) return asc ? 1 : -1;
+            return 0;
+        });
+        $.each(rows, function(index, row) { $tbody.append(row); });
+    }
+
+    function setupSortableTable(tableSelector) {
+        var $table = $(tableSelector);
+        if ($table.data('aacr2SortBound')) return;
+        $table.data('aacr2SortBound', 1);
+        var sortState = {};
+        $table.find('th.sortable').each(function(index) {
+            $(this).on('click', function() {
+                sortState[index] = !sortState[index];
+                sortTableRows(tableSelector, index, sortState[index]);
+            });
+        });
+    }
+
+    function progressStatusFromCounts(total, done, updatedAt) {
+        total = Number(total || 0);
+        done = Number(done || 0);
+        if (!total && !done) {
+            return updatedAt ? 'not_started' : 'no_data';
+        }
+        if (!total) return 'in_progress';
+        if (!done) return 'not_started';
+        if (done >= total) return 'completed';
+        return 'in_progress';
+    }
+
+    function formatTimestamp(epoch) {
+        if (!epoch) return '';
+        var date = new Date(epoch * 1000);
+        return date.toLocaleString();
+    }
+
+    function escapeHtml(value) {
+        return (value === undefined || value === null ? '' : String(value))
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function fallbackCurrentModule(summary) {
+        summary = summary || {};
+        var modules = summary.module_breakdown || {};
+        var names = Object.keys(modules);
+        if (!names.length) return '';
+        var nextModule = names[0] || '';
+        names.some(function(name) {
+            var entry = modules[name] || {};
+            var done = Number(entry.completed || 0) + Number(entry.skipped || 0);
+            if (Number(entry.total || 0) > 0 && done < Number(entry.total || 0)) {
+                nextModule = name;
+                return true;
+            }
+            return false;
+        });
+        return nextModule || '';
+    }
+
+    function fallbackCurrentTier(summary) {
+        summary = summary || {};
+        var tiers = summary.tier_breakdown || {};
+        var names = Object.keys(tiers);
+        if (!names.length) return '';
+        names.sort(function(a, b) {
+            var na = parseInt((a.match(/\d+/) || [999])[0], 10);
+            var nb = parseInt((b.match(/\d+/) || [999])[0], 10);
+            if (na !== nb) return na - nb;
+            return a.localeCompare(b);
+        });
+        var nextTier = names[0] || '';
+        names.some(function(name) {
+            var entry = tiers[name] || {};
+            var done = Number(entry.completed || 0) + Number(entry.skipped || 0);
+            var total = Number(entry.total || 0);
+            if (total > 0 && done < total) {
+                nextTier = name;
+                return true;
+            }
+            return false;
+        });
+        return nextTier || '';
+    }
+
+    function summarizeProgressRow(done, total) {
+        done = Number(done || 0);
+        total = Number(total || 0);
+        if (!total) return '0%';
+        var percent = Math.round((done / total) * 100);
+        if (percent < 0) percent = 0;
+        if (percent > 100) percent = 100;
+        return percent + '% (' + done + '/' + total + ')';
+    }
+
+    function moduleCountsFromSummary(summary, summaryCounts, moduleName) {
+        summary = summary || {};
+        summaryCounts = summaryCounts || {};
+        var breakdown = summary.module_breakdown || {};
+        var moduleLabel = moduleName || '';
+        var entry = moduleLabel && breakdown[moduleLabel] ? breakdown[moduleLabel] : null;
+        if (!entry && moduleLabel) {
+            var wanted = normalizeText(moduleLabel);
+            Object.keys(breakdown).some(function(key) {
+                if (normalizeText(key) === wanted) {
+                    entry = breakdown[key];
+                    return true;
+                }
+                return false;
+            });
+        }
+
+        var completed;
+        var skipped;
+        var total;
+        if (entry && typeof entry === 'object') {
+            completed = Number(entry.completed || 0);
+            skipped = Number(entry.skipped || 0);
+            total = Number(entry.total || 0);
+        } else {
+            completed = Number(summaryCounts.completed_count || summaryCounts.steps_completed || 0);
+            skipped = Number(summaryCounts.skipped_count || summaryCounts.steps_skipped || 0);
+            total = Number(summaryCounts.total || summaryCounts.steps_total || 0);
+        }
+
+        if (completed < 0) completed = 0;
+        if (skipped < 0) skipped = 0;
+        if (total < 0) total = 0;
+        if (total < (completed + skipped)) {
+            total = completed + skipped;
+        }
+
+        return {
+            completed: completed,
+            skipped: skipped,
+            total: total
+        };
+    }
+
+    function sortTierLabels(list) {
+        return (list || []).sort(function(a, b) {
+            var aa = (a || '').toString();
+            var bb = (b || '').toString();
+            var na = parseInt((aa.match(/\d+/) || [999])[0], 10);
+            var nb = parseInt((bb.match(/\d+/) || [999])[0], 10);
+            if (na !== nb) return na - nb;
+            return aa.localeCompare(bb);
+        });
+    }
+
+    function updateProgressFilterOptions(rows) {
+        rows = rows || [];
+        var modules = [];
+        var tiers = [];
+        rows.forEach(function(row) {
+            if (row.module && modules.indexOf(row.module) === -1) modules.push(row.module);
+            if (row.tier && tiers.indexOf(row.tier) === -1) tiers.push(row.tier);
+        });
+        modules.sort(function(a, b) { return a.localeCompare(b); });
+        tiers = sortTierLabels(tiers);
+
+        var applyOptions = function($select, values, allLabel) {
+            var previous = $select.val() || 'all';
+            $select.empty();
+            $select.append($('<option>').val('all').text(allLabel));
+            values.forEach(function(value) {
+                $select.append($('<option>').val(value).text(value));
+            });
+            if (previous !== 'all') {
+                var matched = values.filter(function(value) {
+                    return normalizeText(value) === normalizeText(previous);
+                })[0];
+                $select.val(matched || 'all');
+            } else {
+                $select.val('all');
+            }
+        };
+
+        applyOptions($('#progress-tier-filter'), tiers, 'All tiers');
+        applyOptions($('#progress-module-filter'), modules, 'All modules');
+    }
+
+    function renderProgressTable(rows) {
+        var $tbody = $('#aacr2-progress-table tbody');
+        $tbody.empty();
+        if (!rows || !rows.length) {
+            $tbody.append('<tr><td colspan="8">No progress records yet.</td></tr>');
+            updateProgressFilterOptions([]);
+            return;
+        }
+        var filterRows = [];
+        rows.forEach(function(row) {
+            var summaryCounts = row.summary_counts || row.summary || {};
+            var summary = row.summary || {};
+            var moduleSummary = summary.current_module || fallbackCurrentModule(summary) || 'n/a';
+            var tierSummary = summary.current_tier || fallbackCurrentTier(summary) || 'n/a';
+            var moduleCounts = moduleCountsFromSummary(summary, summaryCounts, moduleSummary);
+            var done = moduleCounts.completed + moduleCounts.skipped;
+            var status = progressStatusFromCounts(moduleCounts.total, done, row.updated_at);
+            var summaryText = summarizeProgressRow(done, moduleCounts.total);
+            filterRows.push({
+                module: moduleSummary,
+                tier: tierSummary
+            });
+            var $tr = $('<tr>')
+                .attr('data-status', status)
+                .attr('data-tier', normalizeText(tierSummary))
+                .attr('data-module', normalizeText(moduleSummary))
+                .append('<td>' + escapeHtml(row.userid || '') + '</td>')
+                .append('<td>' + escapeHtml(row.name || '') + '</td>')
+                .append('<td>' + escapeHtml(tierSummary) + '</td>')
+                .append('<td>' + escapeHtml(moduleSummary) + '</td>')
+                .append('<td>' + moduleCounts.completed + '</td>')
+                .append('<td>' + moduleCounts.skipped + '</td>')
+                .append('<td>' + escapeHtml(summaryText) + '</td>')
+                .append('<td>' + formatTimestamp(row.updated_at) + '</td>');
+            $tbody.append($tr);
+        });
+        updateProgressFilterOptions(filterRows);
+    }
+
+    function applyProgressFilters() {
+        var query = normalizeText($('#progress-search').val());
+        var status = normalizeText($('#progress-status-filter').val() || 'all');
+        var tier = normalizeText($('#progress-tier-filter').val() || 'all');
+        var module = normalizeText($('#progress-module-filter').val() || 'all');
+        $('#aacr2-progress-table tbody tr').each(function() {
+            var rowText = normalizeText($(this).text());
+            var rowStatus = normalizeText($(this).attr('data-status') || '');
+            var rowTier = normalizeText($(this).attr('data-tier') || '');
+            var rowModule = normalizeText($(this).attr('data-module') || '');
+            var matchesQuery = !query || rowText.indexOf(query) !== -1;
+            var matchesStatus = status === 'all' || status === rowStatus;
+            var matchesTier = tier === 'all' || tier === rowTier;
+            var matchesModule = module === 'all' || module === rowModule;
+            $(this).toggle(matchesQuery && matchesStatus && matchesTier && matchesModule);
+        });
+    }
+
+    function getVisibleProgressRowsForExport() {
+        var rows = [];
+        $('#aacr2-progress-table tbody tr:visible').each(function() {
+            var cells = $(this).children('td');
+            if (!cells.length || cells.length < 8) return;
+            rows.push([
+                $(cells[0]).text().trim(),
+                $(cells[1]).text().trim(),
+                $(cells[2]).text().trim(),
+                $(cells[3]).text().trim(),
+                $(cells[4]).text().trim(),
+                $(cells[5]).text().trim(),
+                $(cells[6]).text().trim(),
+                $(cells[7]).text().trim()
+            ]);
+        });
+        return rows;
+    }
+
+    function downloadBlob(filename, type, content) {
+        var blob = new Blob([content], { type: type });
+        var url = URL.createObjectURL(blob);
+        var link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(function() { URL.revokeObjectURL(url); }, 500);
+    }
+
+    function exportProgressAsCsv() {
+        var rows = getVisibleProgressRowsForExport();
+        if (!rows.length) {
+            toastr.warning('No visible progress rows to export.');
+            return;
+        }
+        var headers = ['User ID', 'Name', 'Tier', 'Module', 'Steps Done', 'Steps Skipped', 'Summary', 'Last Updated'];
+        var esc = function(value) {
+            var text = (value === undefined || value === null) ? '' : String(value);
+            return '"' + text.replace(/"/g, '""') + '"';
+        };
+        var lines = [headers.map(esc).join(',')];
+        rows.forEach(function(row) {
+            lines.push(row.map(esc).join(','));
+        });
+        var stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+        downloadBlob('aacr2-training-progress-' + stamp + '.csv', 'text/csv;charset=utf-8', '\ufeff' + lines.join('\n'));
+    }
+
+    function buildXlsxWorkbookBytes(headers, rows) {
+        var xmlEscape = function(value) {
+            return (value === undefined || value === null ? '' : String(value))
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&apos;');
+        };
+        var utf8 = function(text) {
+            if (window.TextEncoder) return new TextEncoder().encode(text);
+            var encoded = unescape(encodeURIComponent(text));
+            var out = new Uint8Array(encoded.length);
+            for (var i = 0; i < encoded.length; i++) out[i] = encoded.charCodeAt(i);
+            return out;
+        };
+        var toColumnName = function(index) {
+            var n = index + 1;
+            var result = '';
+            while (n > 0) {
+                var mod = (n - 1) % 26;
+                result = String.fromCharCode(65 + mod) + result;
+                n = Math.floor((n - 1) / 26);
+            }
+            return result;
+        };
+        var allRows = [headers].concat(rows || []);
+        var lastCol = toColumnName(Math.max(headers.length - 1, 0));
+        var lastRow = Math.max(allRows.length, 1);
+        var sheetRows = allRows.map(function(row, rowIndex) {
+            var rowNumber = rowIndex + 1;
+            var cells = (row || []).map(function(cell, colIndex) {
+                var ref = toColumnName(colIndex) + rowNumber;
+                var text = cell === undefined || cell === null ? '' : String(cell);
+                var preserve = (/^\s|\s$|\n/.test(text)) ? ' xml:space="preserve"' : '';
+                return '<c r="' + ref + '" t="inlineStr"><is><t' + preserve + '>' + xmlEscape(text) + '</t></is></c>';
+            }).join('');
+            return '<row r="' + rowNumber + '">' + cells + '</row>';
+        }).join('');
+
+        var contentTypes = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+            + '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+            + '<Default Extension="xml" ContentType="application/xml"/>'
+            + '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+            + '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+            + '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'
+            + '</Types>';
+        var rels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'
+            + '</Relationships>';
+        var workbook = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            + '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+            + 'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+            + '<sheets><sheet name="Progress" sheetId="1" r:id="rId1"/></sheets>'
+            + '</workbook>';
+        var workbookRels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'
+            + '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'
+            + '</Relationships>';
+        var worksheet = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            + '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+            + '<dimension ref="A1:' + lastCol + lastRow + '"/>'
+            + '<sheetData>' + sheetRows + '</sheetData>'
+            + '</worksheet>';
+        var styles = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            + '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+            + '<fonts count="1"><font><sz val="11"/><name val="Calibri"/><family val="2"/></font></fonts>'
+            + '<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>'
+            + '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>'
+            + '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
+            + '<cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellXfs>'
+            + '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>'
+            + '</styleSheet>';
+
+        var files = [
+            { name: '[Content_Types].xml', data: utf8(contentTypes) },
+            { name: '_rels/.rels', data: utf8(rels) },
+            { name: 'xl/workbook.xml', data: utf8(workbook) },
+            { name: 'xl/_rels/workbook.xml.rels', data: utf8(workbookRels) },
+            { name: 'xl/worksheets/sheet1.xml', data: utf8(worksheet) },
+            { name: 'xl/styles.xml', data: utf8(styles) }
+        ];
+
+        var crcTable = (function() {
+            var table = new Uint32Array(256);
+            for (var n = 0; n < 256; n++) {
+                var c = n;
+                for (var k = 0; k < 8; k++) {
+                    c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+                }
+                table[n] = c >>> 0;
+            }
+            return table;
+        })();
+        var crc32 = function(bytes) {
+            var c = 0xFFFFFFFF;
+            for (var i = 0; i < bytes.length; i++) {
+                c = crcTable[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+            }
+            return (c ^ 0xFFFFFFFF) >>> 0;
+        };
+        var push16 = function(arr, value) {
+            arr.push(value & 255, (value >>> 8) & 255);
+        };
+        var push32 = function(arr, value) {
+            arr.push(value & 255, (value >>> 8) & 255, (value >>> 16) & 255, (value >>> 24) & 255);
+        };
+        var concatChunks = function(chunks) {
+            var total = chunks.reduce(function(sum, chunk) { return sum + chunk.length; }, 0);
+            var out = new Uint8Array(total);
+            var offset = 0;
+            chunks.forEach(function(chunk) {
+                out.set(chunk, offset);
+                offset += chunk.length;
+            });
+            return out;
+        };
+        var now = new Date();
+        var dosTime = ((now.getHours() & 31) << 11) | ((now.getMinutes() & 63) << 5) | ((Math.floor(now.getSeconds() / 2)) & 31);
+        var year = now.getFullYear() < 1980 ? 1980 : now.getFullYear();
+        var dosDate = (((year - 1980) & 127) << 9) | (((now.getMonth() + 1) & 15) << 5) | (now.getDate() & 31);
+
+        var localChunks = [];
+        var centralChunks = [];
+        var offset = 0;
+        files.forEach(function(file) {
+            var nameBytes = utf8(file.name);
+            var dataBytes = file.data;
+            var checksum = crc32(dataBytes);
+
+            var localHeader = [];
+            push32(localHeader, 0x04034b50);
+            push16(localHeader, 20);
+            push16(localHeader, 0);
+            push16(localHeader, 0);
+            push16(localHeader, dosTime);
+            push16(localHeader, dosDate);
+            push32(localHeader, checksum);
+            push32(localHeader, dataBytes.length);
+            push32(localHeader, dataBytes.length);
+            push16(localHeader, nameBytes.length);
+            push16(localHeader, 0);
+            localChunks.push(new Uint8Array(localHeader), nameBytes, dataBytes);
+
+            var centralHeader = [];
+            push32(centralHeader, 0x02014b50);
+            push16(centralHeader, 20);
+            push16(centralHeader, 20);
+            push16(centralHeader, 0);
+            push16(centralHeader, 0);
+            push16(centralHeader, dosTime);
+            push16(centralHeader, dosDate);
+            push32(centralHeader, checksum);
+            push32(centralHeader, dataBytes.length);
+            push32(centralHeader, dataBytes.length);
+            push16(centralHeader, nameBytes.length);
+            push16(centralHeader, 0);
+            push16(centralHeader, 0);
+            push16(centralHeader, 0);
+            push16(centralHeader, 0);
+            push32(centralHeader, 0);
+            push32(centralHeader, offset);
+            centralChunks.push(new Uint8Array(centralHeader), nameBytes);
+
+            offset += localHeader.length + nameBytes.length + dataBytes.length;
+        });
+
+        var centralBytes = concatChunks(centralChunks);
+        var localBytes = concatChunks(localChunks);
+        var eocd = [];
+        push32(eocd, 0x06054b50);
+        push16(eocd, 0);
+        push16(eocd, 0);
+        push16(eocd, files.length);
+        push16(eocd, files.length);
+        push32(eocd, centralBytes.length);
+        push32(eocd, localBytes.length);
+        push16(eocd, 0);
+        return concatChunks([localBytes, centralBytes, new Uint8Array(eocd)]);
+    }
+
+    function exportProgressAsExcel() {
+        var rows = getVisibleProgressRowsForExport();
+        if (!rows.length) {
+            toastr.warning('No visible progress rows to export.');
+            return;
+        }
+        var headers = ['User ID', 'Name', 'Tier', 'Module', 'Steps Done', 'Steps Skipped', 'Summary', 'Last Updated'];
+        var stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+        try {
+            var xlsxBytes = buildXlsxWorkbookBytes(headers, rows);
+            downloadBlob(
+                'aacr2-training-progress-' + stamp + '.xlsx',
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                xlsxBytes
+            );
+        } catch (err) {
+            toastr.error('Excel export failed: ' + (err && err.message ? err.message : 'unknown error'));
+        }
+    }
+
+    function sanitizeServerMessage(text) {
+        return (text || '')
+            .toString()
+            .replace(/<[^>]*>/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, 180);
+    }
+
+    function buildHttpError(status, message) {
+        var detail = (message || '').toString().trim();
+        return 'HTTP ' + status + (detail ? ': ' + detail : '');
+    }
+
+    function sessionExpiredMessage(status) {
+        return (status === 401)
+            ? 'Session expired. Please refresh and log in again.'
+            : '';
+    }
+
+    function looksLikeKohaLoginHtml(text) {
+        var raw = (text || '').toString().toLowerCase();
+        return raw.indexOf('name="login_userid"') !== -1
+            || raw.indexOf('id="loginform"') !== -1
+            || raw.indexOf('koha login') !== -1
+            || raw.indexOf('auth.tt') !== -1;
+    }
+
+    function getCsrfToken() {
+        function normalizeToken(value) {
+            if (value === undefined || value === null) return '';
+            var token = String(value).replace(/[\r\n]/g, '').trim();
+            if (!token) return '';
+            if (token.indexOf(',') !== -1) {
+                token = token.split(',').map(function(item) { return item.trim(); }).filter(Boolean)[0] || '';
+            }
+            return token;
+        }
+        function isPluginToken(value) {
+            return /^[a-f0-9]{64}$/i.test(String(value || '').trim());
+        }
+        var token = '';
+        var $pluginForm = $('form[data-plugin-csrf-token]').first();
+        if ($pluginForm.length) {
+            token = normalizeToken($pluginForm.attr('data-plugin-csrf-token') || '');
+            if (token && !isPluginToken(token)) token = '';
+        }
+        if (!token) {
+            var $pluginField = $('form[data-plugin-csrf-token] input[name="csrf_token"]').first();
+            token = normalizeToken($pluginField.length ? ($pluginField.val() || '') : '');
+            if (token && !isPluginToken(token)) token = '';
+        }
+        if (!token) {
+            var $field = $('#csrf_token');
+            token = normalizeToken($field.length ? ($field.val() || '') : '');
+            if (token && !isPluginToken(token)) token = '';
+        }
+        if (!token) {
+            var pluginMeta = document.querySelector('meta[name="aacr2-plugin-csrf-token"]');
+            token = normalizeToken(pluginMeta ? pluginMeta.getAttribute('content') : '');
+            if (token && !isPluginToken(token)) token = '';
+        }
+        if (!token) {
+            var metas = document.querySelectorAll('meta[name="csrf-token"]');
+            for (var i = 0; i < metas.length; i += 1) {
+                token = normalizeToken(metas[i] ? metas[i].getAttribute('content') : '');
+                if (token && !isPluginToken(token)) {
+                    token = '';
+                    continue;
+                }
+                if (token) break;
+            }
+        }
+        return token;
+    }
+
+    function fetchJson(url, options) {
+        var opts = options || {};
+        opts.credentials = 'include';
+        return fetch(url, opts).then(function(response) {
+            var contentType = (response.headers.get('content-type') || '').toLowerCase();
+            var isJson = contentType.indexOf('application/json') !== -1;
+            if (!response.ok) {
+                var sessionMessage = sessionExpiredMessage(response.status);
+                if (sessionMessage) {
+                    throw new Error(buildHttpError(response.status, sessionMessage));
+                }
+                if (isJson) {
+                    return response.json().then(function(data) {
+                        var message = (data && (data.error || data.message)) || '';
+                        if (!message && data && data.details) {
+                            message = JSON.stringify(data.details);
+                        }
+                        throw new Error(buildHttpError(response.status, message || 'Request failed.'));
+                    }, function() {
+                        return response.text().then(function(text) {
+                            if (looksLikeKohaLoginHtml(text)) {
+                                throw new Error(buildHttpError(response.status, 'Session expired. Please refresh and log in again.'));
+                            }
+                            var message = sanitizeServerMessage(text) || 'Request failed.';
+                            throw new Error(buildHttpError(response.status, message));
+                        });
+                    });
+                }
+                return response.text().then(function(text) {
+                    if (looksLikeKohaLoginHtml(text)) {
+                        throw new Error(buildHttpError(response.status, 'Session expired. Please refresh and log in again.'));
+                    }
+                    var message = sanitizeServerMessage(text) || 'Request failed.';
+                    throw new Error(buildHttpError(response.status, message));
+                });
+            }
+            if (!isJson) {
+                return response.text().then(function(text) {
+                    if (looksLikeKohaLoginHtml(text)) {
+                        throw new Error(buildHttpError(401, 'Session expired. Please refresh and log in again.'));
+                    }
+                    var message = sanitizeServerMessage(text) || 'Non-JSON response from server.';
+                    throw new Error(buildHttpError(response.status, message));
+                });
+            }
+            return response.json().then(function(data) {
+                return data;
+            }, function() {
+                return response.text().then(function(text) {
+                    var message = sanitizeServerMessage(text) || 'Response was not valid JSON.';
+                    throw new Error(buildHttpError(response.status, message));
+                });
+            });
+        });
+    }
+
+    function buildPluginMethodUrl(pluginPath, methodName, extraParams) {
+        var method = (methodName || '').toString().trim();
+        if (!method) {
+            throw new Error('Plugin method is required.');
+        }
+        var fallbackClass = '[% CLASS %]';
+        var basePath = '/cgi-bin/koha/plugins/run.pl';
+        var className = fallbackClass;
+        var rawPath = (pluginPath || '').toString();
+
+        if (rawPath) {
+            var qm = rawPath.indexOf('?');
+            if (qm >= 0) {
+                basePath = rawPath.substring(0, qm) || basePath;
+                var query = rawPath.substring(qm + 1);
+                var parsed = new URLSearchParams(query || '');
+                className = (parsed.get('class') || className || '').trim();
+            } else if (rawPath.indexOf('/cgi-bin/koha/plugins/run.pl') !== -1) {
+                basePath = rawPath;
+            }
+        }
+
+        var params = new URLSearchParams();
+        if (className) params.set('class', className);
+        params.set('method', method);
+        if (extraParams && typeof extraParams === 'object') {
+            Object.keys(extraParams).forEach(function(key) {
+                var value = extraParams[key];
+                if (value === undefined || value === null || value === '') return;
+                params.set(key, String(value));
+            });
+        }
+        return basePath + '?' + params.toString();
+    }
+
+    function postPluginJson(pluginPath, methodName, payload, extraParams) {
+        var csrfToken = getCsrfToken();
+        var finalPayload = (payload && typeof payload === 'object') ? $.extend({}, payload) : {};
+        var params = $.extend({ op: 'plugin_api' }, extraParams || {});
+        var url = buildPluginMethodUrl(pluginPath, methodName, params);
+        var headers = {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+        };
+        if (csrfToken) {
+            headers['X-CSRF-Token'] = csrfToken;
+            headers['CSRF-TOKEN'] = csrfToken;
+        }
+        if (csrfToken && !finalPayload.csrf_token) finalPayload.csrf_token = csrfToken;
+        return fetchJson(url, {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify(finalPayload)
+        });
+    }
+
+    function fetchProgressTable(pluginPath) {
+        fetchJson(buildPluginMethodUrl(pluginPath, 'guide_progress_list', { op: 'plugin_api' }), {
+            method: 'GET',
+            headers: { 'Accept': 'application/json' }
+        })
+            .then(function(data) {
+                renderProgressTable((data && data.users) || []);
+                applyProgressFilters();
+                setupSortableTable('#aacr2-progress-table');
+            })
+            .catch(function(err) {
+                toastr.error('Progress load failed: ' + err.message);
+                $('#aacr2-progress-table tbody').html('<tr><td colspan="8">Unable to load progress.</td></tr>');
+                updateProgressFilterOptions([]);
+            });
+    }
+
+    // Document ready function
+    $(document).ready(function() {
+        var savedSuccessfully = [% saved_successfully ? 1 : 0 %];
+        draftState = loadDraftState();
+        var pluginPath = '/cgi-bin/koha/plugins/run.pl?class=' + encodeURIComponent('[% CLASS %]');
+        var csrfValue = getCsrfToken();
+        var $form = $('form[data-plugin-csrf-token]').first();
+        if ($form.length && csrfValue) {
+            $form.attr('data-plugin-csrf-token', csrfValue);
+        }
+        if (csrfValue && $('#csrf_token').length && !$('#csrf_token').val()) {
+            $('#csrf_token').val(csrfValue);
+        }
+        var tabEls = document.querySelectorAll('#aacr2-config-tabs a[data-bs-toggle="tab"]');
+        if (window.bootstrap && window.bootstrap.Tab) {
+            tabEls.forEach(function(tabEl) {
+                tabEl.addEventListener('click', function(event) {
+                    event.preventDefault();
+                    window.bootstrap.Tab.getOrCreateInstance(tabEl).show();
+                });
+            });
+        } else {
+            $('#aacr2-config-tabs a').on('click', function(event) {
+                event.preventDefault();
+                $('#aacr2-config-tabs .nav-link').removeClass('active');
+                $(this).addClass('active');
+                $('.tab-pane').removeClass('show active');
+                var target = $(this).attr('href') || $(this).data('bs-target');
+                if (target) $(target).addClass('show active');
+            });
+        }
+        // Initialize Select2 for multi-select dropdowns when available
+        if ($.fn && $.fn.select2) {
+            $('#guide_users, #internship_users').select2({
+                placeholder: "Select option",
+                allowClear: true,
+                width: '100%'
+            });
+            $('#llm_api_provider').select2({
+                minimumResultsForSearch: Infinity,
+                width: 'style'
+            });
+        }
+
+        if (savedSuccessfully) {
+            clearDraftState();
+        } else if (draftState) {
+            applyDraftState(draftState);
+        }
+
+        // Toggle user checkboxes based on initial state
+        toggleUserCheckboxes();
+
+        // Event handlers for enabling/disabling user checkboxes
+        $('#enable_guide').change(toggleUserCheckboxes);
+        $('#internship_mode').change(toggleUserCheckboxes);
+
+        // User table search/sort
+        function applyGuideUserFilters() {
+            filterUserTableRows('#guide-user-search', '#guide-user-filter', '#guide-users-table');
+        }
+        function applyInternshipUserFilters() {
+            filterUserTableRows('#internship-user-search', '#internship-user-filter', '#internship-users-table');
+        }
+        $('#guide-user-search').on('input', applyGuideUserFilters);
+        $('#guide-user-filter').on('change', applyGuideUserFilters);
+        $('#guide-users-table').on('change', 'input[type="checkbox"]', applyGuideUserFilters);
+        $('#internship-user-search').on('input', applyInternshipUserFilters);
+        $('#internship-user-filter').on('change', applyInternshipUserFilters);
+        $('#internship-users-table').on('change', 'input[type="checkbox"]', applyInternshipUserFilters);
+        setupSortableTable('#guide-users-table');
+        setupSortableTable('#internship-users-table');
+
+        // Check if settings were saved successfully
+        [% IF saved_successfully %]
+            toastr.success('Settings saved successfully!');
+        [% END %]
+
+        var modelDefaults = [% model_defaults_json || '{}' %];
+        var promptDefaults = [% prompt_defaults_json || '{}' %];
+        var defaultOpenAiModel = modelDefaults.openai || '';
+        var defaultOpenRouterModel = modelDefaults.openrouter || '';
+        var fallbackModel = modelDefaults.fallback || '';
+        if (!defaultOpenAiModel && fallbackModel && fallbackModel !== 'default' && fallbackModel.indexOf('/') === -1) {
+            defaultOpenAiModel = fallbackModel;
+        }
+        if (!defaultOpenRouterModel && fallbackModel && fallbackModel !== 'default' && fallbackModel.indexOf('/') !== -1) {
+            defaultOpenRouterModel = fallbackModel;
+        }
+        var openAiModels = [];
+        var openRouterModels = [];
+        var activeProvider = ($('#llm_api_provider').val() || 'OpenRouter').toLowerCase();
+        var modelSelections = {
+            openai: defaultOpenAiModel || '',
+            openrouter: defaultOpenRouterModel || ''
+        };
+        var modelWarnings = {
+            openai: '',
+            openrouter: ''
+        };
+        var modelWarningToasts = {
+            openai: false,
+            openrouter: false
+        };
+        var missingKeyToasts = {
+            openai: false,
+            openrouter: false
+        };
+        var draftModelValue = $('#ai_model').val();
+        var draftProviderValue = ($('#llm_api_provider').val() || 'OpenRouter').toLowerCase();
+        if (draftModelValue) {
+            modelSelections[draftProviderValue] = draftModelValue;
+        }
+
+        if (!modelSelections.openai && activeProvider === 'openai' && fallbackModel) {
+            modelSelections.openai = fallbackModel;
+        }
+        if (modelSelections.openai === 'default') {
+            modelSelections.openai = '';
+        }
+        function normalizedRequestMode() {
+            var mode = ($('#ai_request_mode').val() || 'server').toLowerCase();
+            return mode === 'direct' || mode === 'browser' ? 'direct' : 'server';
+        }
+
+        function strictJsonEnabled() {
+            return $('#ai_strict_json_mode').is(':checked');
+        }
+
+        function activePromptDefaults() {
+            if (strictJsonEnabled()) {
+                if (promptDefaults && promptDefaults.strict_json) return promptDefaults.strict_json;
+                return (promptDefaults && promptDefaults.active) ? promptDefaults.active : {};
+            }
+            if (promptDefaults && promptDefaults.plain) return promptDefaults.plain;
+            if (promptDefaults && promptDefaults.default) return promptDefaults;
+            return (promptDefaults && promptDefaults.active) ? promptDefaults.active : {};
+        }
+
+        function promptPlaceholderText(value) {
+            var raw = (value || '').toString().trim();
+            if (!raw) return '';
+            var singleLine = raw.replace(/\s+/g, ' ').trim();
+            if (singleLine.length <= 240) return singleLine;
+            return singleLine.slice(0, 237) + '...';
+        }
+
+        function updatePromptPlaceholders() {
+            var defaults = activePromptDefaults();
+            var defaultPrompt = (defaults && defaults.default) ? defaults.default : '';
+            var catalogingPrompt = (defaults && defaults.cataloging) ? defaults.cataloging : '';
+            $('#ai_prompt_default').attr('placeholder', promptPlaceholderText(defaultPrompt));
+            $('#ai_prompt_cataloging').attr('placeholder', promptPlaceholderText(catalogingPrompt));
+        }
+
+        function isDirectBrowserMode() {
+            return normalizedRequestMode() === 'direct';
+        }
+
+        function providerLabel(provider) {
+            return (provider || '').toLowerCase() === 'openrouter' ? 'OpenRouter' : 'OpenAI';
+        }
+
+        function updateRequestModeHint() {
+            var message = isDirectBrowserMode()
+                ? 'Direct browser mode sends AI requests from the browser and uses an obfuscated browser-local key only.'
+                : 'Server mode sends AI requests through Koha and uses server-stored provider keys only.';
+            if (strictJsonEnabled()) {
+                message += ' Structured JSON mode is enabled.';
+            }
+            $('#ai-request-mode-hint').text(message);
+        }
+
+        function browserKeyStorageKeys(provider) {
+            var normalized = (provider || 'openrouter').toLowerCase();
+            if (normalized === 'openai') {
+                return ['aacr2.openai.api_key.obf', 'aacr2.openai.api_key', 'aacr2_openai_api_key'];
+            }
+            return ['aacr2.openrouter.api_key.obf', 'aacr2.openrouter.api_key', 'aacr2_openrouter_api_key'];
+        }
+
+        function obfuscateBrowserKey(value) {
+            var raw = (value || '').toString();
+            if (!raw) return '';
+            var mask = 73;
+            var transformed = '';
+            for (var i = 0; i < raw.length; i++) {
+                transformed += String.fromCharCode(raw.charCodeAt(i) ^ mask);
+            }
+            try {
+                return btoa(transformed);
+            } catch (err) {
+                return '';
+            }
+        }
+
+        function deobfuscateBrowserKey(value) {
+            var raw = (value || '').toString().trim();
+            if (!raw) return '';
+            var decoded = '';
+            try {
+                decoded = atob(raw);
+            } catch (err) {
+                return raw;
+            }
+            var mask = 73;
+            var transformed = '';
+            for (var i = 0; i < decoded.length; i++) {
+                transformed += String.fromCharCode(decoded.charCodeAt(i) ^ mask);
+            }
+            return transformed;
+        }
+
+        function browserKeyFingerprint(value) {
+            var raw = (value || '').toString();
+            if (!raw) return '';
+            var hash = 5381;
+            for (var i = 0; i < raw.length; i++) {
+                hash = ((hash << 5) + hash) + raw.charCodeAt(i);
+                hash &= 0xffffffff;
+            }
+            var hex = (hash >>> 0).toString(16);
+            while (hex.length < 8) hex = '0' + hex;
+            return 'k' + raw.length + '-' + hex;
+        }
+
+        function readStoredBrowserKey(provider) {
+            var keys = browserKeyStorageKeys(provider);
+            var stores = [window.sessionStorage, window.localStorage];
+            for (var i = 0; i < stores.length; i++) {
+                var store = stores[i];
+                if (!store) continue;
+                for (var j = 0; j < keys.length; j++) {
+                    var key = keys[j];
+                    try {
+                        var value = store.getItem(key);
+                        if (!value) continue;
+                        if (key.indexOf('.obf') !== -1) {
+                            var decoded = deobfuscateBrowserKey(value);
+                            if (decoded) return decoded;
+                        } else if (String(value).trim()) {
+                            return String(value).trim();
+                        }
+                    } catch (err) {
+                        // ignore storage read errors
+                    }
+                }
+            }
+            return '';
+        }
+
+        function storeBrowserKey(provider, keyValue) {
+            var normalized = (provider || 'openrouter').toLowerCase();
+            var obfuscated = obfuscateBrowserKey(keyValue);
+            var keyName = browserKeyStorageKeys(normalized)[0];
+            if (!obfuscated || !keyName) return false;
+            var stored = false;
+            try {
+                if (window.localStorage) {
+                    window.localStorage.setItem(keyName, obfuscated);
+                    stored = true;
+                }
+            } catch (err) {
+                stored = false;
+            }
+            if (!stored) {
+                try {
+                    if (window.sessionStorage) {
+                        window.sessionStorage.setItem(keyName, obfuscated);
+                        stored = true;
+                    }
+                } catch (err2) {
+                    stored = false;
+                }
+            }
+            if (stored) {
+                try {
+                    if (window.localStorage && window.sessionStorage) {
+                        if (window.localStorage.getItem(keyName)) {
+                            window.sessionStorage.removeItem(keyName);
+                        } else {
+                            window.localStorage.removeItem(keyName);
+                        }
+                    }
+                } catch (err3) {
+                    // ignore cleanup errors
+                }
+            }
+            return stored;
+        }
+
+        function clearBrowserKey(provider) {
+            var keys = browserKeyStorageKeys(provider);
+            [window.localStorage, window.sessionStorage].forEach(function(store) {
+                if (!store) return;
+                keys.forEach(function(key) {
+                    try {
+                        store.removeItem(key);
+                    } catch (err) {
+                        // ignore storage clear errors
+                    }
+                });
+            });
+        }
+
+        function providerHasSavedKey(provider) {
+            var normalized = (provider || 'openrouter').toLowerCase();
+            var $row = $('#ai-api-key-row');
+            var openaiSet = Number($row.data('openai-set')) === 1;
+            var openrouterSet = Number($row.data('openrouter-set')) === 1;
+            return normalized === 'openrouter' ? openrouterSet : openaiSet;
+        }
+
+        function providerHasConfiguredKey(provider) {
+            return isDirectBrowserMode()
+                ? !!readStoredBrowserKey(provider)
+                : providerHasSavedKey(provider);
+        }
+
+        function notifyProviderWarning(provider, warning) {
+            var normalized = (provider || 'openrouter').toLowerCase();
+            var message = (warning || '').toString().trim();
+            if (!message || modelWarningToasts[normalized]) return;
+            modelWarningToasts[normalized] = true;
+            toastr.warning(providerLabel(normalized) + ': ' + message);
+        }
+
+        function notifyMissingSavedKey(provider) {
+            var normalized = (provider || 'openrouter').toLowerCase();
+            if (providerHasConfiguredKey(normalized) || missingKeyToasts[normalized]) return;
+            missingKeyToasts[normalized] = true;
+            var scope = isDirectBrowserMode() ? 'in this browser' : 'on server';
+            toastr.warning(providerLabel(normalized) + ' API key is not configured ' + scope + '.');
+        }
+
+        function normalizeDirectModels(provider, payload) {
+            var normalized = (provider || 'openrouter').toLowerCase();
+            var list = (payload && payload.data && Array.isArray(payload.data)) ? payload.data : [];
+            if (normalized === 'openai') {
+                return list
+                    .filter(function(item) { return item && item.id; })
+                    .map(function(item) {
+                        return {
+                            id: item.id,
+                            name: item.id,
+                            owned_by: item.owned_by || ''
+                        };
+                    })
+                    .sort(function(a, b) { return (a.id || '').localeCompare(b.id || ''); });
+            }
+            return list
+                .map(function(model) {
+                    if (!model) return null;
+                    var id = model.id || model.canonical_slug || '';
+                    if (!id) return null;
+                    var architecture = (model.architecture && typeof model.architecture === 'object') ? model.architecture : {};
+                    var inputModalities = model.input_modalities || architecture.input_modalities || [];
+                    var outputModalities = model.output_modalities || architecture.output_modalities || [];
+                    if (!Array.isArray(inputModalities)) inputModalities = [inputModalities];
+                    if (!Array.isArray(outputModalities)) outputModalities = [outputModalities];
+                    return {
+                        id: id,
+                        name: model.name || id,
+                        description: model.description || '',
+                        context_length: model.context_length || 0,
+                        pricing: model.pricing || {},
+                        modalities: model.modalities || model.modality || architecture.modality || [],
+                        input_modalities: inputModalities,
+                        output_modalities: outputModalities
+                    };
+                })
+                .filter(function(item) { return !!item; })
+                .sort(function(a, b) { return (a.id || '').localeCompare(b.id || ''); });
+        }
+
+        function fetchOpenRouterModelsViaServer(force) {
+            return postPluginJson(pluginPath, 'ai_models', {
+                provider: 'openrouter',
+                force: force ? 1 : 0,
+                allow_public: 1
+            })
+                .then(function(data) {
+                    if (!data || typeof data !== 'object') {
+                        return {
+                            ok: 0,
+                            provider: 'openrouter',
+                            key_present: 0,
+                            models: [],
+                            warning: 'OpenRouter model lookup returned an invalid response.'
+                        };
+                    }
+                    if (!data.warning && !data.key_present) {
+                        data.warning = 'OpenRouter API key is not configured on server. Showing public models via server request.';
+                    }
+                    return data;
+                })
+                .catch(function(err) {
+                    var message = (err && err.message) ? err.message : 'Network request failed.';
+                    return {
+                        ok: 0,
+                        provider: 'openrouter',
+                        key_present: 0,
+                        models: [],
+                        warning: 'OpenRouter model lookup via server failed (' + message + '). Enter model ID manually or switch request mode.'
+                    };
+                });
+        }
+
+        function fetchModelsDirect(provider, force) {
+            var normalized = (provider || 'openrouter').toLowerCase();
+            var apiKey = readStoredBrowserKey(normalized);
+            if (!apiKey && normalized !== 'openrouter') {
+                return Promise.resolve({
+                    ok: 0,
+                    provider: normalized,
+                    key_present: 0,
+                    models: [],
+                    warning: providerLabel(normalized) + ' API key is not configured in this browser.'
+                });
+            }
+            if (normalized === 'openrouter') {
+                return fetchOpenRouterModelsViaServer(force);
+            }
+            var url = normalized === 'openai'
+                ? 'https://api.openai.com/v1/models'
+                : 'https://openrouter.ai/api/v1/models';
+            var headers = {
+                'Authorization': 'Bearer ' + apiKey,
+                'Accept': 'application/json'
+            };
+            return fetch(url, { method: 'GET', headers: headers })
+                .then(function(response) {
+                    if (!response.ok) {
+                        return response.text().then(function(text) {
+                            var message = sanitizeServerMessage(text) || 'Request failed.';
+                            throw new Error(buildHttpError(response.status, message));
+                        });
+                    }
+                    return response.json();
+                })
+                .then(function(payload) {
+                    return {
+                        ok: 1,
+                        provider: normalized,
+                        key_present: 1,
+                        cached: 0,
+                        models: normalizeDirectModels(normalized, payload),
+                        warning: ''
+                    };
+                })
+                .catch(function(err) {
+                    var message = (err && err.message) ? err.message : 'Network request failed.';
+                    return {
+                        ok: 0,
+                        provider: normalized,
+                        key_present: 1,
+                        models: [],
+                        warning: providerLabel(normalized) + ' browser-direct model lookup failed (' + message + '). Use server mode to fetch models automatically.'
+                    };
+                });
+        }
+
+        function fetchModels(provider, force) {
+            var normalized = (provider || 'openrouter').toLowerCase();
+            if (isDirectBrowserMode()) {
+                return fetchModelsDirect(normalized, force);
+            }
+            if (!providerHasSavedKey(normalized)) {
+                if (normalized === 'openrouter') {
+                    return fetchOpenRouterModelsViaServer(force);
+                }
+                return Promise.resolve({
+                    ok: 0,
+                    provider: normalized,
+                    key_present: 0,
+                    models: [],
+                    warning: providerLabel(normalized) + ' API key is not configured on server.'
+                });
+            }
+            return postPluginJson(pluginPath, 'ai_models', {
+                provider: normalized,
+                force: force ? 1 : 0
+            });
+        }
+
+        function setModelSelect($select, models, selectedId, labelFn, options) {
+            var opts = options || {};
+            var defaultOption = opts.defaultOption;
+            $select.empty();
+            if (opts.includeBlank !== false) {
+                var blank = $('<option>').attr('value', '').text('Select a model');
+                if (!selectedId) blank.attr('selected', 'selected');
+                $select.append(blank);
+            }
+            if (defaultOption) {
+                var defaultLabel = defaultOption.label || defaultOption.id;
+                var defaultItem = $('<option>').attr('value', defaultOption.id).text(defaultLabel);
+                if (defaultOption.id === selectedId) defaultItem.attr('selected', 'selected');
+                $select.append(defaultItem);
+            }
+            if (selectedId && (!defaultOption || selectedId !== defaultOption.id)
+                && !models.some(function(item) { return item.id === selectedId; })) {
+                models = [{ id: selectedId, name: selectedId }].concat(models);
+            }
+            models.forEach(function(model) {
+                var label = labelFn ? labelFn(model) : (model.name || model.id);
+                var option = $('<option>').attr('value', model.id).text(label);
+                if (model.id === selectedId) option.attr('selected', 'selected');
+                $select.append(option);
+            });
+        }
+
+        function loadOpenAiModels(force, selectedId) {
+            fetchModels('openai', force)
+                .then(function(data) {
+                    if (data && data.error) {
+                        toastr.error(data.error);
+                        renderOpenAiModels(selectedId);
+                        return;
+                    }
+                    modelWarnings.openai = (data && data.warning) ? data.warning : '';
+                    notifyProviderWarning('openai', modelWarnings.openai);
+                    if (!modelWarnings.openai) notifyMissingSavedKey('openai');
+                    updateModelHint('openai');
+                    openAiModels = (data && data.models) ? data.models : [];
+                    renderOpenAiModels(selectedId);
+                })
+                .catch(function(err) {
+                    toastr.error('OpenAI models unavailable: ' + err.message);
+                    renderOpenAiModels(selectedId);
+                });
+        }
+
+        function filterOpenAiModels(models) {
+            var search = ($('#ai-model-search').val() || '').toLowerCase();
+            if (!search) return models;
+            return models.filter(function(model) {
+                var id = (model.id || '').toLowerCase();
+                return id.indexOf(search) !== -1;
+            });
+        }
+
+        function renderOpenAiModels(selectedId) {
+            var filtered = filterOpenAiModels(openAiModels || []);
+            var selected = selectedId || $('#ai_model').val() || modelSelections.openai || '';
+            setModelSelect($('#ai_model'), filtered, selected, function(model) {
+                return model.id;
+            }, { includeBlank: true });
+        }
+
+        function getModelTokens(model) {
+            var tokens = [];
+            function addTokens(value) {
+                var raw = String(value).toLowerCase();
+                raw.split(/[^a-z0-9]+/).forEach(function(token) {
+                    if (token) tokens.push(token);
+                });
+            }
+            ['modalities', 'input_modalities', 'output_modalities'].forEach(function(key) {
+                var value = model[key];
+                if (Array.isArray(value)) {
+                    value.forEach(addTokens);
+                } else if (value) {
+                    addTokens(value);
+                }
+            });
+            var architecture = model.architecture || {};
+            ['modality', 'modalities', 'input_modalities', 'output_modalities'].forEach(function(key) {
+                var value = architecture[key];
+                if (Array.isArray(value)) {
+                    value.forEach(addTokens);
+                } else if (value) {
+                    addTokens(value);
+                }
+            });
+            return tokens;
+        }
+
+        function isFreeModel(model) {
+            var pricing = model.pricing || {};
+            var prompt = parseFloat(pricing.prompt || pricing.input || pricing.prompt_token || pricing.input_price || '1');
+            var completion = parseFloat(pricing.completion || pricing.output || pricing.completion_token || pricing.output_price || '1');
+            return prompt === 0 && completion === 0;
+        }
+
+        function hasModalities(model, key) {
+            if (Array.isArray(model[key]) && model[key].length) return true;
+            var architecture = model.architecture || {};
+            return Array.isArray(architecture[key]) && architecture[key].length;
+        }
+
+        function filterOpenRouterModels(models) {
+            var search = ($('#ai-model-search').val() || '').toLowerCase();
+            var filters = {
+                text: $('#openrouter-filter-text').is(':checked'),
+                image: $('#openrouter-filter-image').is(':checked'),
+                input: $('#openrouter-filter-input').is(':checked'),
+                output: $('#openrouter-filter-output').is(':checked'),
+                free: $('#openrouter-filter-free').is(':checked')
+            };
+            return models.filter(function(model) {
+                var id = (model.id || '').toLowerCase();
+                var name = (model.name || '').toLowerCase();
+                var desc = (model.description || '').toLowerCase();
+                if (search && id.indexOf(search) === -1 && name.indexOf(search) === -1 && desc.indexOf(search) === -1) {
+                    return false;
+                }
+                var tokens = getModelTokens(model);
+                if (filters.text && tokens.length && !tokens.includes('text') && id.indexOf('text') === -1) return false;
+                if (filters.image && !tokens.includes('image') && id.indexOf('image') === -1) return false;
+                if (filters.input && !hasModalities(model, 'input_modalities')) return false;
+                if (filters.output && !hasModalities(model, 'output_modalities')) return false;
+                if (filters.free && !isFreeModel(model)) return false;
+                return true;
+            });
+        }
+
+        function renderOpenRouterModels(selectedId) {
+            var filtered = filterOpenRouterModels(openRouterModels || []);
+            var selected = selectedId || $('#ai_model').val() || modelSelections.openrouter || '';
+            setModelSelect($('#ai_model'), filtered, selected, function(model) {
+                return model.name ? (model.name + ' (' + model.id + ')') : model.id;
+            }, { includeBlank: true });
+        }
+
+        function loadOpenRouterModels(force, selectedId) {
+            fetchModels('openrouter', force)
+                .then(function(data) {
+                    if (data && data.error) {
+                        toastr.error(data.error);
+                        renderOpenRouterModels(selectedId);
+                        return;
+                    }
+                    modelWarnings.openrouter = (data && data.warning) ? data.warning : '';
+                    notifyProviderWarning('openrouter', modelWarnings.openrouter);
+                    if (!modelWarnings.openrouter) notifyMissingSavedKey('openrouter');
+                    updateModelHint('openrouter');
+                    openRouterModels = (data && data.models) ? data.models : [];
+                    renderOpenRouterModels(selectedId);
+                })
+                .catch(function(err) {
+                    toastr.error('OpenRouter models unavailable: ' + err.message);
+                    renderOpenRouterModels(selectedId);
+                });
+        }
+
+        function updateModelHint(provider) {
+            var normalized = (provider || 'openai').toLowerCase();
+            var modeText = isDirectBrowserMode()
+                ? 'Direct browser mode: model list is fetched from provider API using browser key.'
+                : 'Server mode: model list is fetched through Koha using saved server key.';
+            var text = normalized === 'openrouter'
+                ? 'Search and filter OpenRouter models (text/image/input/output/free).'
+                : 'Search OpenAI model IDs. Filters are available for OpenRouter only.';
+            text += ' ' + modeText;
+            var warning = modelWarnings[normalized] || '';
+            if (warning) text += ' ' + warning;
+            $('#ai-model-hint').text(text);
+        }
+
+        function updateApiKeyUi(provider) {
+            var normalized = (provider || 'openrouter').toLowerCase();
+            var $row = $('#ai-api-key-row');
+            var openaiSet = Number($row.data('openai-set')) === 1;
+            var openrouterSet = Number($row.data('openrouter-set')) === 1;
+            var isOpenRouter = normalized === 'openrouter';
+            var directMode = isDirectBrowserMode();
+            var label = isOpenRouter ? 'OpenRouter API Key:' : 'OpenAI API Key:';
+            var hint = '';
+            var isSet = directMode
+                ? !!readStoredBrowserKey(normalized)
+                : (isOpenRouter ? openrouterSet : openaiSet);
+            if (directMode) {
+                var browserKey = readStoredBrowserKey(normalized);
+                hint = isOpenRouter
+                    ? 'OpenRouter API key for direct browser mode (stored obfuscated in this browser only and sent directly to OpenRouter).'
+                    : 'OpenAI API key for direct browser mode (stored obfuscated in this browser only and sent directly to OpenAI).';
+                if (browserKey) {
+                    hint += ' Fingerprint: ' + browserKeyFingerprint(browserKey) + '.';
+                }
+            } else {
+                hint = isOpenRouter
+                    ? 'OpenRouter API key (stored server-side only in Koha).'
+                    : 'OpenAI API key (stored server-side only in Koha).';
+            }
+            if (isSet) hint += ' (set)';
+            $('#ai-api-key-label').text(label);
+            $('#ai-api-key-hint').text(hint);
+            $('#clear-ai-key').prop('disabled', !isSet);
+            var $indicator = $('#ai-api-key-indicator');
+            if (isSet) {
+                $indicator.text(directMode ? 'Browser' : 'Saved').removeClass('is-empty').addClass('is-set').show();
+            } else {
+                $indicator.text('Not set').removeClass('is-set').addClass('is-empty').show();
+            }
+            $('#ai_api_key').attr('placeholder', directMode ? 'Stored locally in browser for direct mode' : 'Stored server-side on save');
+        }
+
+        function toggleAiProviderFields() {
+            var provider = ($('#llm_api_provider').val() || 'OpenRouter').toLowerCase();
+            var isOpenRouter = provider === 'openrouter';
+            $('.openai-only').toggle(!isOpenRouter);
+            $('.openrouter-only').toggle(isOpenRouter);
+            $('#ai-model-search').prop('disabled', false)
+                .attr('placeholder', isOpenRouter ? 'Search OpenRouter models...' : 'Search OpenAI models...');
+            $('.openrouter-filters input').prop('disabled', !isOpenRouter);
+            $('#ai_api_key_clear').val('0');
+            updateRequestModeHint();
+            updateModelHint(provider);
+            updateApiKeyUi(provider);
+            notifyMissingSavedKey(provider);
+        }
+
+        function loadModelsForProvider(provider, force) {
+            var normalized = (provider || 'openai').toLowerCase();
+            if (!providerHasConfiguredKey(normalized)) {
+                modelWarnings[normalized] = providerLabel(normalized) + ' API key is not configured '
+                    + (isDirectBrowserMode() ? 'in this browser.' : 'on server.');
+                updateModelHint(normalized);
+                notifyMissingSavedKey(normalized);
+                if (normalized === 'openrouter') {
+                    // OpenRouter can still provide public models via server endpoint.
+                    loadOpenRouterModels(force, modelSelections.openrouter);
+                } else {
+                    openAiModels = [];
+                    renderOpenAiModels(modelSelections.openai);
+                }
+                return;
+            }
+            if (normalized === 'openrouter') {
+                loadOpenRouterModels(force, modelSelections.openrouter);
+            } else {
+                loadOpenAiModels(force, modelSelections.openai);
+            }
+        }
+
+        toggleAiProviderFields();
+        loadModelsForProvider($('#llm_api_provider').val() || 'openrouter', false);
+        $('#llm_api_provider').on('change', function() {
+            modelSelections[activeProvider] = $('#ai_model').val() || modelSelections[activeProvider] || '';
+            activeProvider = ($(this).val() || 'OpenRouter').toLowerCase();
+            toggleAiProviderFields();
+            loadModelsForProvider(activeProvider, false);
+        });
+        $('#ai_request_mode').on('change', function() {
+            toggleAiProviderFields();
+            loadModelsForProvider(activeProvider, false);
+        });
+        $('#refresh-ai-models').on('click', function() {
+            loadModelsForProvider(activeProvider, true);
+        });
+        $('#ai_model').on('change', function() {
+            modelSelections[activeProvider] = $(this).val() || modelSelections[activeProvider] || '';
+        });
+        $('#ai-model-search').on('input', function() {
+            if (activeProvider === 'openrouter') {
+                renderOpenRouterModels();
+            } else {
+                renderOpenAiModels();
+            }
+        });
+        $('.openrouter-filters input').on('change', function() {
+            renderOpenRouterModels();
+        });
+
+        // Training progress
+        fetchProgressTable(pluginPath);
+        $('#progress-search').on('input', applyProgressFilters);
+        $('#progress-status-filter').on('change', applyProgressFilters);
+        $('#progress-tier-filter').on('change', applyProgressFilters);
+        $('#progress-module-filter').on('change', applyProgressFilters);
+        $('#progress-refresh').on('click', function() {
+            fetchProgressTable(pluginPath);
+        });
+        $('#progress-export-csv').on('click', function() {
+            exportProgressAsCsv();
+        });
+        $('#progress-export-excel').on('click', function() {
+            exportProgressAsExcel();
+        });
+        var progressTimer = null;
+        $('#progress-auto-refresh').on('change', function() {
+            var enabled = $(this).is(':checked');
+            if (progressTimer) {
+                clearInterval(progressTimer);
+                progressTimer = null;
+            }
+            if (enabled) {
+                progressTimer = setInterval(function() {
+                    fetchProgressTable(pluginPath);
+                }, 30000);
+            }
+        });
+        $('#progress-auto-refresh').trigger('change');
+
+        $('#ai-test-connection').on('click', function() {
+            var provider = ($('#llm_api_provider').val() || 'OpenRouter').toLowerCase();
+            if (isDirectBrowserMode()) {
+                if (!providerHasConfiguredKey(provider)) {
+                    toastr.error(providerLabel(provider) + ' API key is not configured in this browser.');
+                    return;
+                }
+                toastr.info('Testing direct browser AI connection...');
+                fetchModelsDirect(provider)
+                    .then(function(data) {
+                        if (!data || data.error) {
+                            toastr.error((data && data.error) || 'AI connection failed.');
+                            return;
+                        }
+                        toastr.success('Direct browser AI connection successful.');
+                    })
+                    .catch(function(err) {
+                        toastr.error('AI connection failed: ' + err.message);
+                    });
+                return;
+            }
+            toastr.info('Testing server AI connection...');
+            postPluginJson(pluginPath, 'test_connection', {})
+                .then(function(data) {
+                    if (data.error) {
+                        toastr.error(data.error);
+                        return;
+                    }
+                    toastr.success('Server AI connection successful.');
+                })
+                .catch(function(err) { toastr.error('AI connection failed: ' + err.message); });
+        });
+        function setupUnifiedKey() {
+            $('#clear-ai-key').on('click', function() {
+                var provider = ($('#llm_api_provider').val() || 'OpenRouter').toLowerCase();
+                var label = provider === 'openrouter' ? 'OpenRouter' : 'OpenAI';
+                if (isDirectBrowserMode()) {
+                    if (!confirm('Clear browser-stored ' + label + ' key for direct mode?')) return;
+                    clearBrowserKey(provider);
+                    $('#ai_api_key').val('');
+                    updateApiKeyUi(provider);
+                    toastr.info(label + ' browser key cleared.');
+                } else {
+                    if (!confirm('Clear stored ' + label + ' key? This cannot be undone.')) return;
+                    $('#ai_api_key_clear').val('1');
+                    $('#ai_api_key').val('');
+                    var $row = $('#ai-api-key-row');
+                    if (provider === 'openrouter') {
+                        $row.data('openrouter-set', 0);
+                    } else {
+                        $row.data('openai-set', 0);
+                    }
+                    updateApiKeyUi(provider);
+                    toastr.info(label + ' key cleared. Save configuration to apply.');
+                }
+            });
+            $('#ai_api_key').on('input', function() {
+                if ($(this).val()) {
+                    $('#ai_api_key_clear').val('0');
+                }
+            });
+            $('#ai_api_key').on('change', function() {
+                if (!isDirectBrowserMode()) return;
+                var provider = ($('#llm_api_provider').val() || 'OpenRouter').toLowerCase();
+                var value = ($(this).val() || '').trim();
+                if (!value) return;
+                if (storeBrowserKey(provider, value)) {
+                    toastr.info(providerLabel(provider) + ' key stored in browser for direct mode.');
+                    updateApiKeyUi(provider);
+                } else {
+                    toastr.error('Unable to store browser API key.');
+                }
+            });
+        }
+
+        setupUnifiedKey();
+
+        $('#reset-ai-prompts').on('click', function() {
+            var defaults = activePromptDefaults();
+            var defaultPrompt = (defaults && defaults.default) ? defaults.default : '';
+            var catalogingPrompt = (defaults && defaults.cataloging) ? defaults.cataloging : '';
+            $('#ai_prompt_default').val(defaultPrompt).trigger('input');
+            $('#ai_prompt_cataloging').val(catalogingPrompt).trigger('input');
+            toastr.info('Prompt fields reset to shipped defaults. Save configuration to apply.');
+        });
+
+        $('#ai_strict_json_mode').on('change', function() {
+            updateRequestModeHint();
+            updatePromptPlaceholders();
+        });
+        updatePromptPlaceholders();
+
+        $('form').on('submit', function() {
+            if (!isDirectBrowserMode()) return;
+            var provider = ($('#llm_api_provider').val() || 'OpenRouter').toLowerCase();
+            var directKey = ($('#ai_api_key').val() || '').trim();
+            if (directKey) {
+                if (storeBrowserKey(provider, directKey)) {
+                    $('#ai_api_key').val('');
+                    updateApiKeyUi(provider);
+                } else {
+                    toastr.error('Unable to store browser API key. Settings save will continue without it.');
+                }
+            }
+            $('#ai_api_key_clear').val('0');
+        });
+
+        $('form').on('input change', 'input, select, textarea', function() {
+            saveDraftSoon();
+        });
+        $('#aacr2-config-tabs a').on('click', function() {
+            saveDraftSoon();
+        });
+    });
+
+    // Validate JSON on save
+    $('form').on('submit', function(e) {
+        if ($(e.target).find('[name="save"]').length) {
+            try {
+                JSON.parse(editor.getValue());
+            } catch (error) {
+                e.preventDefault();
+                alert('Invalid JSON in custom rules: ' + error.message);
+                return false;
+            }
+        }
+    });
+
+    // Auto-format JSON
+    $('#custom-rules-editor').next().find('.CodeMirror').after(
+        '<button type="button" class="btn btn-sm btn-default" onclick="formatJSON()" style="margin-top: 5px;">' +
+        '<i class="fa fa-indent"></i> Format JSON</button>'
+    );
+
+    function formatJSON() {
+        try {
+            var formatted = JSON.stringify(JSON.parse(editor.getValue()), null, 2);
+            editor.setValue(formatted);
+        } catch (error) {
+            alert('Cannot format: Invalid JSON');
+        }
+    }
+</script>
+[% INCLUDE 'intranet-bottom.inc' %]
