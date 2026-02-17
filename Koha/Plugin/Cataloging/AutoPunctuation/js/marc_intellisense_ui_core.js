@@ -353,6 +353,8 @@
             .aacr2-ai-section-title { font-weight: 700; font-size: 12px; margin-bottom: 6px; color: #0c223f; text-transform: uppercase; letter-spacing: 0.3px; }
             .aacr2-ai-inline { display: flex; gap: 6px; align-items: center; margin-top: 4px; }
             .aacr2-ai-inline input { flex: 1 1 auto; min-width: 160px; }
+            .aacr2-ai-prefix-options { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px 10px; }
+            .aacr2-ai-prefix-options label { margin: 0; font-weight: 400; display: inline-flex; align-items: center; gap: 4px; }
             .aacr2-ai-list { padding-left: 18px; margin: 4px 0 0 0; }
             .aacr2-ai-callnumber { margin-top: 8px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px; }
             .aacr2-guide-modal { position: fixed; top: 120px; right: 24px; left: auto; transform: none; background: #ffffff; border: 1px solid #d1d9e0; box-shadow: 0 10px 25px rgba(15, 23, 42, 0.2); border-radius: 6px; padding: 0; z-index: 10001; width: 420px; resize: both; overflow: auto; min-width: 320px; min-height: 220px; max-height: 80vh; display: flex; flex-direction: column; }

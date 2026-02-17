@@ -1,182 +1,202 @@
-# Koha AACR2 AI Guardrail Assistant
-
-Buy Me a Coffee (Crypto)
-
-If this saved you time (or a shout 👀), you can fuel more dev with a small tip:
-
-BTC: 19JSzRPB5qp3TKZVBeVUR8xmgntxKui5cc
-
-LTC: LesDgPh9BVp8SgbXqk8GbyCzHwnrgn7tDv
-
-ETH (ERC20): 0x5cc9f67d0f8328a46b9f9e12a1cfbf1a379e5947
-
-USDT (ERC20):  0x5cc9f67d0f8328a46b9f9e12a1cfbf1a379e5947
-
-USDC (ERC20): 0x5cc9f67d0f8328a46b9f9e12a1cfbf1a379e5947
-
-Thanks a ton! 🙏
-
-## Table of Contents
-
-- [Overview](#overview)
-- [Changelog](#changelog)
-- [Key Features](#key-features)
-- [Requirements](#requirements)
-- [Installation](#installation)
-- [Configuration](#configuration)
-- [Using the Plugin](#using-the-plugin)
-- [Training Guide Modules](#training-guide-modules)
-- [Internship Mode](#internship-mode)
-- [AI Assist](#ai-assist)
-- [Admin Training Progress](#admin-training-progress)
-- [Copy Cataloging Notes](#copy-cataloging-notes)
-- [Troubleshooting](#troubleshooting)
-- [Development Notes](#development-notes)
-- [Testing](#testing)
-- [License](#license)
+# Koha_AACR2_Assistant_Plugin
 
 ## Overview
+`Koha_AACR2_Assistant_Plugin` is an AACR2-focused cataloging assistant for Koha. It combines deterministic MARC21 punctuation/guardrail enforcement with optional AI guidance, an interactive training guide, and admin progress reporting.
 
-The Koha AACR2 AI Guardrail Assistant enforces AACR2-only MARC21 punctuation rules with guardrails, live validation, and an optional AI assist layer. It adds a floating cataloging assistant panel, inline indicators, an interactive training guide, and configurable guardrails designed for both training and production cataloging.
+This plugin is designed for real cataloging work, internship training workflows, and gradual AI adoption without losing rule-based control.
 
-## Changelog
+## Core Capabilities
+- AACR2 guardrails and live validation on cataloging forms.
+- Deterministic punctuation suggestions with apply/undo/ignore workflows.
+- Optional auto-apply mode or suggestion-only mode.
+- AI Assist panel for:
+  - Classification suggestions
+  - Subject heading suggestions
+  - Rule/punctuation guidance
+  - Call number build from classification + cutter + year
+- Collection prefix support in call number build:
+  - `Ref.`
+  - `Spec. Col.`
+  - `Fed. Doc.`
+  - `St. Doc.`
+  - `Juv. Col.`
+  - `Media`
+  - `Microform`
+  - `Music`
+- Interactive AACR2 training guide with module progression.
+- Internship mode to enforce read-only learning behavior for selected users.
+- Admin training progress table with filtering, sorting, and export (CSV/XLSX).
+- Coverage report against MARC framework fields plus custom rule stubs.
+- Update notification support from GitHub releases.
 
-- 2026-01-29: Progress endpoints now return JSON on errors, accept JSON or form payloads, and store per-user progress safely with migration from legacy data. The guide UI reports sync failures with status messages. Configuration tabs now use Bootstrap 5 tab markup styled as hyperlinks. Added OpenAI reasoning effort controls, higher default max output tokens, and truncation warnings.
-- 2026-02-13: Added server/direct request-mode API key UX updates, browser-key persistence hardening, provider model fetch gating (no live fetch without configured key), elapsed AI request status messaging, stronger subject extraction/subdivision handling (`x/y/z/v`), per-subject apply actions, strict JSON prompt toggle, and prompt defaults updated to include `source_text`.
-- 2026-02-13: Improved AI error handling for HTTP 429/empty-provider responses with actionable guidance, added robust parsing for OpenRouter/OpenAI array-style content blocks, tightened false-positive classification range checks, removed bulk subject apply in favor of per-suggestion apply buttons, added intelligent duplicate-aware subject application with replace-toggle behavior, and updated heading guidance/rules to avoid forced terminal punctuation in 1XX/6XX/7XX/8XX. Added a 100$a guardrail for missing comma-space in personal name main entry form.
-- 2026-02-13: Expanded training-guide/rules consistency for conservative punctuation policy: added hands-off coverage for 041/255/340/856 and complex notes (505/533/534), added 250$b and 300$e support, refined 300$c `+` handling before accompanying material, and aligned 246 guidance to minimal auto-punctuation.
+## AI Design Principles
+- AI is advisory only; nothing is silently auto-committed.
+- Deterministic rules remain first-class.
+- Structured JSON mode is optional and configurable.
+- Server-mode and direct-browser mode are both supported.
+- Classification extraction keeps LC class numbers and strips cutter/year fragments where applicable.
+- Cataloging AI response text is rendered with preserved line breaks for readability.
 
-## Key Features
+## Required Koha Core Deltas
+This repository includes three reference files at repo root:
+- `Auth.pm`
+- `handler.pm`
+- `run.pl`
 
-- AACR2 punctuation rules with deterministic enforcement.
-- Inline indicators and ghost suggestions.
-- Floating assistant panel with apply/undo/ignore controls.
-- Training guide with modules (jump to Title, Publication, Subjects, etc.).
-- Internship mode to disable auto-apply while keeping warnings visible.
-- AI assist for punctuation explanations, classification, and subject guidance (optional).
-- Deterministic call number builder (classification + cutter + year) with manual override.
-- Coverage report and custom rules support.
+These are **not standalone replacements** to copy blindly. They document functional deltas that must be applied to your Koha installation’s core files for this plugin’s request/response flow and error handling to work reliably.
 
-## Requirements
+### 1) `C4/Auth.pm`
+Expected target in Koha install:
+- `/usr/share/koha/lib/C4/Auth.pm`
 
-- Koha intranet access with plugin support enabled.
-- Modern browser (MutationObserver support recommended).
-- Optional: OpenAI or OpenRouter API key for AI assist.
+Repo delta intent:
+- Preserve login credential handling semantics around `POST` login (`op=cud-login`) while avoiding unsafe parameter wiping behavior in other contexts.
 
-## Installation
+Why this matters for the plugin:
+- The plugin relies on authenticated staff session behavior and stable request handling for plugin endpoints.
+- Incorrect auth parameter handling can break plugin requests or cause inconsistent session behavior.
 
-1. Download the plugin package and upload it in Koha:
-   `Koha Administration → Plugins → Manage Plugins → Upload plugin`.
-2. Enable the plugin after upload.
-3. Open the plugin tool page to verify status.
+### 2) `Koha/Plugins/Handler.pm`
+Expected target in Koha install:
+- `/usr/share/koha/lib/Koha/Plugins/Handler.pm`
 
-## Configuration
+Repo delta intent:
+- Defensive validation of plugin class/method input.
+- Hardened `eval` around `load`, plugin instantiation, and method dispatch.
+- Clear warnings for non-callable/invalid methods.
 
-Open the configuration page from the plugin tool.
+Why this matters for the plugin:
+- Prevents fragile dispatch failures and improves runtime diagnostics.
+- Avoids silent crashes or malformed plugin method execution paths.
 
-Important options:
+### 3) `plugins/run.pl`
+Expected target in Koha install:
+- `/usr/share/koha/intranet/cgi-bin/plugins/run.pl`
 
-- `Enable AACR2 Intellisense` to activate the plugin.
-- `Auto-Apply Punctuation` to choose between auto-apply or suggest-only.
-- `Enable Interactive AACR2 Guide` to show the training guide.
-- `Internship Mode` to disable auto-apply for selected users.
-- `Required AACR2 Fields` to enforce required subfields.
-- AI options for OpenAI connectivity and model selection.
-  Model lists are pulled dynamically from the selected provider.
+Repo delta intent:
+- Robust query-string fallback parsing.
+- Stronger parameter validation for `class` and `method`.
+- Consistent response emission for plugin API calls (including JSON error payloads).
+- Avoids empty-response execution paths.
 
-## Using the Plugin
+Why this matters for the plugin:
+- The plugin uses `op=plugin_api` extensively for AI, model fetch, progress APIs, and settings tooling.
+- Without these deltas, you may hit:
+  - `End of script output before headers`
+  - empty/XHR failures
+  - unstable plugin API responses
 
-On the cataloging editor:
-
-- Use the toolbar to toggle AACR2 assistant and AI assist.
-- Use the floating Cataloging Assistant to apply/undo/ignore suggestions.
-- Open the Training Guide for step-by-step AACR2 practice.
-
-## Training Guide Modules
-
-The training guide is organized by bibliographic areas so catalogers can jump directly to a module:
-
-- Title & Statement (245/246)
-- Edition (250)
-- Publication (260/264)
-- Physical Description (300)
-- Series (440/490/8xx)
-- Notes (5xx)
-- Subjects (6xx)
-- Added Entries (7xx)
-- Linking Entries (76x-78x)
-- Main Entry Names (1xx)
-- Identifiers (0xx)
-
-The guide tracks completed and skipped steps and shows module completion indicators. When all modules are complete, a congratulatory dialog appears.
-
-## Internship Mode
-
-Internship mode disables auto-apply and apply/undo actions for selected users, while still allowing them to view warnings and errors. This supports supervised learning without removing guardrails.
-
-## AI Assist
-
-AI assist is optional and requires an API key.
-
-- `Server (Koha)` mode uses provider keys stored server-side only.
-- `Direct browser` mode uses obfuscated browser-local keys and sends requests directly from the browser.
-- Strict JSON mode can be enabled in configuration to make default prompts request structured JSON output.
-- AI suggestions are never auto-applied; all actions require explicit user acceptance.
-- Classification and subject guidance are based on 245 title source text, while call numbers are built deterministically from classification + cutter + year.
-
-## Admin Training Progress
-
-The configuration page includes a training progress table with search, sorting, and status filtering. It shows:
-
-- Steps completed and skipped
-- Modules completed
-- Last updated time
-
-Progress is recorded when catalogers use the training guide.
-
-## Copy Cataloging Notes
-
-The plugin refreshes guardrails after load and watches for dynamic field inserts. This ensures validation and assistant findings remain accurate during copy cataloging workflows.
-
-## Troubleshooting
-
-- Enable debug mode for console logs.
-- Confirm required fields and excluded tags are correctly configured.
-- If AI assist fails, verify API key and model settings.
-- For missing guide steps, ensure fields exist on the cataloging form.
-- OpenRouter JSON issues: some models ignore strict JSON. The plugin now strips code fences, repairs JSON when possible, and falls back to plain text while showing debug details in the AI panel. If you see parsing errors, disable strict JSON mode or switch models.
-
-## Development Notes
-
-Core files:
-
-- `Koha/Plugin/Cataloging/AutoPunctuation.pm` (plugin logic)
-- `Koha/Plugin/Cataloging/AutoPunctuation/js/marc_intellisense_ui.js` (UI/guide)
-- `Koha/Plugin/Cataloging/AutoPunctuation/js/rules_engine.js` (validation)
-- `Koha/Plugin/Cataloging/AutoPunctuation/rules/aacr2_baseline.json` (rules)
-
-Custom rules can be added in JSON format on the configuration page.
-
-## Testing
-
-Run the rules engine regression fixtures:
-
+## How to Apply Core Deltas Safely
+1. Back up Koha core files:
 ```bash
-node tests/rules_engine.test.js
+sudo cp /usr/share/koha/lib/C4/Auth.pm /usr/share/koha/lib/C4/Auth.pm.bak
+sudo cp /usr/share/koha/lib/Koha/Plugins/Handler.pm /usr/share/koha/lib/Koha/Plugins/Handler.pm.bak
+sudo cp /usr/share/koha/intranet/cgi-bin/plugins/run.pl /usr/share/koha/intranet/cgi-bin/plugins/run.pl.bak
 ```
 
-Perl schema/regex validator tests (requires a Koha environment):
-
+2. Compare your Koha files against this repo’s reference files and merge only relevant deltas:
 ```bash
-prove -l t
+diff -u /usr/share/koha/lib/C4/Auth.pm /path/to/repo/Auth.pm
+diff -u /usr/share/koha/lib/Koha/Plugins/Handler.pm /path/to/repo/handler.pm
+diff -u /usr/share/koha/intranet/cgi-bin/plugins/run.pl /path/to/repo/run.pl
 ```
 
-Build the plugin package (`.kpz`) with:
+3. Restart services after patching:
+```bash
+sudo systemctl restart koha-plack
+sudo systemctl restart apache2
+```
 
+Notes:
+- Koha package versions differ; merge carefully.
+- Reapply/verify after Koha upgrades.
+- Keep local patch documentation in your deployment runbook.
+
+## Plugin Installation
+1. Build `.kpz` package:
 ```bash
 ./scripts/build_kpz.sh
 ```
 
-## License
+2. Upload in Koha intranet:
+- Koha Administration -> Plugins -> Manage Plugins -> Upload plugin
 
-MIT License. See `LICENSE`.
+3. Enable plugin and open:
+- Tool page
+- Configure page
+
+## Configuration Guide
+Main areas:
+- General
+  - Enable plugin
+  - Auto-apply punctuation toggle
+- AI Assist
+  - Provider selection (`OpenRouter` or `OpenAI`)
+  - Request mode (`Server` or `Direct browser`)
+  - Model selection/search/filter
+  - Prompt templates (punctuation + cataloging)
+  - Strict JSON mode toggle
+  - Connection test
+- Rules & Validation
+  - Guardrail enforcement
+  - Live validation
+  - Block save on error
+  - Required/excluded field settings
+  - Custom rules JSON
+  - Coverage report
+- Training
+  - Interactive guide enable/disable
+  - Exclusion lists
+  - Internship mode user controls
+  - Progress table + exports
+- Advanced/Debug
+  - Debug mode
+  - Raw AI debug payload inclusion
+  - AI payload preview
+
+## AI Assist Panel Notes
+Cataloging section provides:
+- Title source from `245$a` plus optional `$n/$p/$b/$c` context.
+- Classification/subjects suggestion toggles.
+- AI response display with preserved newlines.
+- Manual classification input.
+- Derived cutter and publication year.
+- Call number preview and apply action.
+- Collection prefix options (`Ref.`, `Spec. Col.`, etc.) applied before class/cutter/year.
+
+## Training Guide and Progress
+- Guide is module-based and progress-aware.
+- Completion and skipped state are tracked per user.
+- Admin progress table includes module totals and overall completion progress.
+- Export available in CSV and Excel.
+
+## Security and Data Handling
+- Koha session/auth and CSRF protections are required for plugin API endpoints.
+- API keys are encrypted server-side in server mode.
+- Direct browser mode stores obfuscated key locally in browser storage.
+- Redaction controls are available for AI payload shaping.
+
+## Troubleshooting
+- API/XHR failures:
+  - Verify core deltas above are applied correctly.
+  - Confirm session validity and CSRF token flow.
+- AI empty response or JSON parse issues:
+  - Retry once.
+  - Lower reasoning effort/max output tokens.
+  - Disable strict JSON mode for non-compliant models.
+- No model list:
+  - Verify provider key and request mode.
+- Guide progress not loading:
+  - Verify plugin API endpoint behavior and Koha logs.
+
+## Development Notes
+Important directories/files:
+- `Koha/Plugin/Cataloging/AutoPunctuation.pm`
+- `Koha/Plugin/Cataloging/AutoPunctuation/Api.pm`
+- `Koha/Plugin/Cataloging/AutoPunctuation/UI.pm`
+- `Koha/Plugin/Cataloging/AutoPunctuation/AI/`
+- `Koha/Plugin/Cataloging/AutoPunctuation/js/`
+- `Koha/Plugin/Cataloging/AutoPunctuation/rules/aacr2_baseline.json`
+
+## License
+MIT. See `LICENSE`.

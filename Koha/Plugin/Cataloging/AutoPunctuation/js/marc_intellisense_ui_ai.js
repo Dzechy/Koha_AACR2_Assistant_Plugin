@@ -411,6 +411,12 @@
         return { element, meta };
     }
 
+    function selectedCallNumberPrefix($panel) {
+        if (!$panel || !$panel.length) return '';
+        const value = $panel.find('input[name="aacr2-ai-prefix-type"]:checked').val();
+        return (value || '').toString().trim();
+    }
+
     function updateAiCatalogingContext($panel, settings, state) {
         if (!$panel || !$panel.length) return {};
         const titleInfo = getTitleWithSubtitle();
@@ -425,10 +431,12 @@
         const suggestionRangeMessage = classificationRangeMessage(aiSuggestions.classification || '');
         const rangeMessage = inputRangeMessage || suggestionRangeMessage || (aiRangeError ? aiRangeError.message : '');
         const classificationRaw = rangeMessage ? '' : (classificationInput || aiSuggestions.classification || '');
-        const classification = normalizeClassificationSuggestion(classificationRaw);
+        const normalizedClassification = sanitizeAiClassificationSuggestion(classificationRaw);
+        const classification = normalizedClassification || normalizeClassificationSuggestion(classificationRaw);
         const cutter = buildCutterSanborn(cutterSource.value || '', cutterSource.tag || '');
         const year = yearInfo.value || '';
-        const callNumber = buildCallNumber(classification, cutter, year);
+        const prefix = selectedCallNumberPrefix($panel);
+        const callNumber = buildCallNumber(classification, cutter, year, prefix);
 
         $panel.find('#aacr2-ai-title').text(titleInfo.value || '(missing)');
         $panel.find('#aacr2-ai-cutter-source').text(cutterSource.label || 'Title');
@@ -480,7 +488,7 @@
             $applyCall.prop('disabled', !!(inputRangeMessage || aiRangeError || readOnly));
         }
         updateAiCatalogingControls($panel, settings);
-        return { titleInfo, cutterSource, year, classification, callNumber, cutter };
+        return { titleInfo, cutterSource, year, classification, callNumber, cutter, prefix };
     }
 
     function getAiCatalogingSelectionState($panel, settings) {
@@ -569,6 +577,18 @@
                                 <label for="aacr2-ai-classification-input">Manual classification number</label>
                                 <div class="aacr2-ai-inline">
                                     <input type="text" id="aacr2-ai-classification-input" class="form-control input-sm" placeholder="Enter classification"/>
+                                </div>
+                                <div class="meta" style="margin-top: 6px;">Collection prefix:</div>
+                                <div class="aacr2-ai-prefix-options">
+                                    <label><input type="radio" name="aacr2-ai-prefix-type" value="" checked/> None</label>
+                                    <label><input type="radio" name="aacr2-ai-prefix-type" value="Ref."/> Reference material</label>
+                                    <label><input type="radio" name="aacr2-ai-prefix-type" value="Spec. Col."/> Special collections</label>
+                                    <label><input type="radio" name="aacr2-ai-prefix-type" value="Fed. Doc."/> Federal documents</label>
+                                    <label><input type="radio" name="aacr2-ai-prefix-type" value="St. Doc."/> State documents</label>
+                                    <label><input type="radio" name="aacr2-ai-prefix-type" value="Juv. Col."/> Juvenile collection</label>
+                                    <label><input type="radio" name="aacr2-ai-prefix-type" value="Media"/> Media</label>
+                                    <label><input type="radio" name="aacr2-ai-prefix-type" value="Microform"/> Microform</label>
+                                    <label><input type="radio" name="aacr2-ai-prefix-type" value="Music"/> Music</label>
                                 </div>
                                 <div id="aacr2-ai-classification-error" class="aacr2-ai-error" style="display:none;"></div>
                                 <div class="meta">Derived cutter: <span id="aacr2-ai-cutter">(n/a)</span></div>
@@ -729,6 +749,9 @@
                 showAiPreviewModal(payload);
             });
             $panel.find('#aacr2-ai-classification-input').on('input', function() {
+                updateAiCatalogingContext($panel, settings, state);
+            });
+            $panel.find('input[name="aacr2-ai-prefix-type"]').on('change', function() {
                 updateAiCatalogingContext($panel, settings, state);
             });
             $panel.find('#aacr2-ai-opt-classification, #aacr2-ai-opt-subjects').on('change', function() {

@@ -164,7 +164,7 @@
                 classification,
                 subjects,
                 confidence,
-                rawText: assistantMessage || result.raw_text_excerpt || '',
+                rawText: formatCatalogingAssistantText(assistantMessage || result.raw_text_excerpt || ''),
                 errors
             };
             updateAiCatalogingContext($('#aacr2-ai-panel'), settings, state);
@@ -313,8 +313,30 @@
         if (extract && typeof extract.extractLcCallNumbers === 'function') {
             const matches = extract.extractLcCallNumbers(cleaned);
             if (!matches.length) return '';
+            return (matches[0] || '').toString().trim();
         }
         return cleaned;
+    }
+
+    function formatCatalogingAssistantText(text) {
+        const raw = (text || '')
+            .toString()
+            .replace(/\r\n?/g, '\n')
+            .trim();
+        if (!raw) return '';
+        const sectionPattern = /^\s*(classification|subjects|confidence|rationale)\s*:/i;
+        const lines = raw.split('\n');
+        const hasSectionedFormat = lines.some(line => sectionPattern.test(line || ''));
+        if (!hasSectionedFormat) return raw;
+        const output = [];
+        lines.forEach(line => {
+            const cleanedLine = (line || '').replace(/\s+$/g, '');
+            if (sectionPattern.test(cleanedLine) && output.length && output[output.length - 1] !== '') {
+                output.push('');
+            }
+            output.push(cleanedLine);
+        });
+        return output.join('\n').replace(/\n{3,}/g, '\n\n').trim();
     }
 
     function classificationRangeMessage(value) {
@@ -803,8 +825,9 @@
         return '';
     }
 
-    function buildCallNumber(classification, cutter, year) {
+    function buildCallNumber(classification, cutter, year, prefix) {
         const parts = [];
+        if (prefix) parts.push(prefix.trim());
         if (classification) parts.push(classification.trim());
         if (cutter) parts.push(cutter.trim());
         if (year) parts.push(year.trim());
