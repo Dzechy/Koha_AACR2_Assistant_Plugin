@@ -199,4 +199,4 @@ Important directories/files:
 - `Koha/Plugin/Cataloging/AutoPunctuation/rules/aacr2_baseline.json`
 
 ## License
-MIT. See `LICENSE`.
+GPL-3.0. See `LICENSE`.
