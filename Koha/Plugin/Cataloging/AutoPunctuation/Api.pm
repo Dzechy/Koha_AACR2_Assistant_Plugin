@@ -270,15 +270,15 @@ sub ai_suggest {
             my $cataloging_mode = $self->_is_cataloging_ai_request($payload);
             my $cataloging_source = '';
             if ($cataloging_mode) {
-                my $filtered_tag_context = $self->_cataloging_tag_context($payload->{tag_context});
-                $filtered_tag_context = $self->_redact_tag_context($filtered_tag_context, $settings);
-                $payload->{tag_context} = $filtered_tag_context;
-                my $source_result = $self->_cataloging_source_from_tag_context($filtered_tag_context);
+                my $cataloging_tag_context = $self->_cataloging_tag_context($payload->{tag_context});
+                my $source_result = $self->_cataloging_source_from_tag_context($cataloging_tag_context);
                 if ($source_result->{error}) {
                     $response_inner = $self->_build_cataloging_error_response($payload, $source_result->{error});
                     return;
                 }
                 $cataloging_source = $source_result->{source};
+                my $filtered_tag_context = $self->_redact_tag_context($cataloging_tag_context, $settings);
+                $payload->{tag_context} = $filtered_tag_context;
                 delete $payload->{record_context};
             } else {
                 my $filtered_record = $self->_filter_record_context($payload->{record_context}, $settings, $tag_context);

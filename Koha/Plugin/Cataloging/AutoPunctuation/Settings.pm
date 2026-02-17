@@ -27,8 +27,11 @@ sub _legacy_prompt_templates {
             'Respond in plain text only (no JSON, no markdown).',
             'Use this exact output format:',
             'Classification: <single LC class number or blank>',
+            '',
             'Subjects: <semicolon-separated subject headings or blank>',
+            '',
             'Confidence: <0-100>',
+            '',
             'Rationale: <brief AACR2 basis>',
             'If a capability is disabled, leave that line blank after the label.',
             'Do not include terminal punctuation in LC class numbers and do not return ranges.'

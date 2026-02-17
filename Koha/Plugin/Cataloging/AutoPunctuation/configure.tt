@@ -189,17 +189,6 @@
     .coverage-status-covered { color: #3c763d; font-weight: bold; }
     .coverage-status-excluded { color: #8a6d3b; font-weight: bold; }
     .coverage-status-missing { color: #a94442; font-weight: bold; }
-    .openrouter-filters {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
-        margin-top: 6px;
-    }
-    .openrouter-filters label {
-        font-weight: 400;
-        font-size: 12px;
-        color: var(--aacr2-muted);
-    }
     .aacr2-tabs.nav-tabs {
         border-bottom: none;
         gap: 12px;
@@ -262,7 +251,7 @@
                 </div>
                 [% END %]
                 [% IF update_info && update_info.update_available %]
-                <div class="alert alert-warning">
+                <div class="alert alert-warning" id="aacr2-update-alert">
                     <p><i class="fa fa-exclamation-circle"></i> New release available: [% update_info.latest_version %] (current [% current_version %]).</p>
                     <p><a href="[% update_info.release_url %]" target="_blank" rel="noopener">View release on GitHub</a></p>
                 </div>
@@ -385,18 +374,10 @@
                                     <li id="ai-model-row">
                                         <label for="ai_model">Model:</label>
                                         <div class="table-tools">
-                                            <input type="text" id="ai-model-search" class="form-control input-sm" placeholder="Search models..."/>
-                                            <select name="ai_model" id="ai_model" class="form-control" style="width: 300px;"></select>
+                                            <select name="ai_model" id="ai_model" class="form-control" style="width: 460px;"></select>
                                             <button type="button" class="btn btn-xs btn-default" id="refresh-ai-models">
                                                 <i class="fa fa-refresh"></i> Refresh
                                             </button>
-                                        </div>
-                                        <div class="openrouter-filters openrouter-only">
-                                            <label><input type="checkbox" id="openrouter-filter-text"> text</label>
-                                            <label><input type="checkbox" id="openrouter-filter-image"> image</label>
-                                            <label><input type="checkbox" id="openrouter-filter-input"> input</label>
-                                            <label><input type="checkbox" id="openrouter-filter-output"> output</label>
-                                            <label><input type="checkbox" id="openrouter-filter-free"> free</label>
                                         </div>
                                         <span class="hint" id="ai-model-hint"></span>
                                     </li>
@@ -705,15 +686,17 @@
                                                 <th class="sortable" data-sort="name">Name</th>
                                                 <th class="sortable" data-sort="tier">Tier</th>
                                                 <th class="sortable" data-sort="module">Module</th>
-                                                <th class="sortable" data-sort="steps_completed">Steps Done</th>
-                                                <th class="sortable" data-sort="steps_skipped">Steps Skipped</th>
+                                                <th class="sortable" data-sort="steps_completed">Module Steps Done</th>
+                                                <th class="sortable" data-sort="steps_skipped">Module Steps Skipped</th>
+                                                <th class="sortable" data-sort="total_steps_completed">Total Steps Done</th>
+                                                <th class="sortable" data-sort="total_steps_skipped">Total Steps Skipped</th>
                                                 <th class="sortable" data-sort="summary">Summary</th>
                                                 <th class="sortable" data-sort="updated_at">Last Updated</th>
                                             </tr>
                                         </thead>
                                         <tbody>
                                             <tr>
-                                                <td colspan="8">Loading progress...</td>
+                                                <td colspan="10">Loading progress...</td>
                                             </tr>
                                         </tbody>
                                     </table>
@@ -1147,13 +1130,19 @@
         return nextTier || '';
     }
 
-    function summarizeProgressRow(done, total) {
+    function summarizeProgressRow(done, total, percentOverride) {
         done = Number(done || 0);
         total = Number(total || 0);
-        if (!total) return '0%';
-        var percent = Math.round((done / total) * 100);
+        var percent = Number(percentOverride);
+        if (!isFinite(percent)) {
+            if (!total) return '0%';
+            percent = Math.round((done / total) * 100);
+        } else {
+            percent = Math.round(percent);
+        }
         if (percent < 0) percent = 0;
         if (percent > 100) percent = 100;
+        if (!total) return percent + '%';
         return percent + '% (' + done + '/' + total + ')';
     }
 
@@ -1186,6 +1175,45 @@
             skipped = Number(summaryCounts.skipped_count || summaryCounts.steps_skipped || 0);
             total = Number(summaryCounts.total || summaryCounts.steps_total || 0);
         }
+
+        if (completed < 0) completed = 0;
+        if (skipped < 0) skipped = 0;
+        if (total < 0) total = 0;
+        if (total < (completed + skipped)) {
+            total = completed + skipped;
+        }
+
+        return {
+            completed: completed,
+            skipped: skipped,
+            total: total
+        };
+    }
+
+    function overallCountsFromSummary(summary, summaryCounts) {
+        summary = summary || {};
+        summaryCounts = summaryCounts || {};
+        var completed = Number(
+            summary.completed_count
+            || summary.steps_completed
+            || summaryCounts.completed_count
+            || summaryCounts.steps_completed
+            || 0
+        );
+        var skipped = Number(
+            summary.skipped_count
+            || summary.steps_skipped
+            || summaryCounts.skipped_count
+            || summaryCounts.steps_skipped
+            || 0
+        );
+        var total = Number(
+            summary.total
+            || summary.steps_total
+            || summaryCounts.total
+            || summaryCounts.steps_total
+            || 0
+        );
 
         if (completed < 0) completed = 0;
         if (skipped < 0) skipped = 0;
@@ -1248,7 +1276,7 @@
         var $tbody = $('#aacr2-progress-table tbody');
         $tbody.empty();
         if (!rows || !rows.length) {
-            $tbody.append('<tr><td colspan="8">No progress records yet.</td></tr>');
+            $tbody.append('<tr><td colspan="10">No progress records yet.</td></tr>');
             updateProgressFilterOptions([]);
             return;
         }
@@ -1259,9 +1287,14 @@
             var moduleSummary = summary.current_module || fallbackCurrentModule(summary) || 'n/a';
             var tierSummary = summary.current_tier || fallbackCurrentTier(summary) || 'n/a';
             var moduleCounts = moduleCountsFromSummary(summary, summaryCounts, moduleSummary);
-            var done = moduleCounts.completed + moduleCounts.skipped;
-            var status = progressStatusFromCounts(moduleCounts.total, done, row.updated_at);
-            var summaryText = summarizeProgressRow(done, moduleCounts.total);
+            var overallCounts = overallCountsFromSummary(summary, summaryCounts);
+            var overallDone = overallCounts.completed + overallCounts.skipped;
+            var completionPercent = Number(summary.completion_percent);
+            if (!isFinite(completionPercent) && overallCounts.total > 0) {
+                completionPercent = Math.round((overallDone / overallCounts.total) * 100);
+            }
+            var status = progressStatusFromCounts(overallCounts.total, overallDone, row.updated_at);
+            var summaryText = summarizeProgressRow(overallDone, overallCounts.total, completionPercent);
             filterRows.push({
                 module: moduleSummary,
                 tier: tierSummary
@@ -1276,6 +1309,8 @@
                 .append('<td>' + escapeHtml(moduleSummary) + '</td>')
                 .append('<td>' + moduleCounts.completed + '</td>')
                 .append('<td>' + moduleCounts.skipped + '</td>')
+                .append('<td>' + overallCounts.completed + '</td>')
+                .append('<td>' + overallCounts.skipped + '</td>')
                 .append('<td>' + escapeHtml(summaryText) + '</td>')
                 .append('<td>' + formatTimestamp(row.updated_at) + '</td>');
             $tbody.append($tr);
@@ -1305,7 +1340,7 @@
         var rows = [];
         $('#aacr2-progress-table tbody tr:visible').each(function() {
             var cells = $(this).children('td');
-            if (!cells.length || cells.length < 8) return;
+            if (!cells.length || cells.length < 10) return;
             rows.push([
                 $(cells[0]).text().trim(),
                 $(cells[1]).text().trim(),
@@ -1314,7 +1349,9 @@
                 $(cells[4]).text().trim(),
                 $(cells[5]).text().trim(),
                 $(cells[6]).text().trim(),
-                $(cells[7]).text().trim()
+                $(cells[7]).text().trim(),
+                $(cells[8]).text().trim(),
+                $(cells[9]).text().trim()
             ]);
         });
         return rows;
@@ -1338,7 +1375,7 @@
             toastr.warning('No visible progress rows to export.');
             return;
         }
-        var headers = ['User ID', 'Name', 'Tier', 'Module', 'Steps Done', 'Steps Skipped', 'Summary', 'Last Updated'];
+        var headers = ['User ID', 'Name', 'Tier', 'Module', 'Module Steps Done', 'Module Steps Skipped', 'Total Steps Done', 'Total Steps Skipped', 'Summary', 'Last Updated'];
         var esc = function(value) {
             var text = (value === undefined || value === null) ? '' : String(value);
             return '"' + text.replace(/"/g, '""') + '"';
@@ -1541,7 +1578,7 @@
             toastr.warning('No visible progress rows to export.');
             return;
         }
-        var headers = ['User ID', 'Name', 'Tier', 'Module', 'Steps Done', 'Steps Skipped', 'Summary', 'Last Updated'];
+        var headers = ['User ID', 'Name', 'Tier', 'Module', 'Module Steps Done', 'Module Steps Skipped', 'Total Steps Done', 'Total Steps Skipped', 'Summary', 'Last Updated'];
         var stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
         try {
             var xlsxBytes = buildXlsxWorkbookBytes(headers, rows);
@@ -1573,6 +1610,67 @@
         return (status === 401)
             ? 'Session expired. Please refresh and log in again.'
             : '';
+    }
+
+    function normalizeVersionParts(version) {
+        var text = (version || '').toString();
+        text = text.replace(/^[^0-9]*/, '');
+        if (!text) return [0];
+        return text.split('.').map(function(part) {
+            var cleaned = (part || '').toString().replace(/[^0-9].*$/, '');
+            var n = parseInt(cleaned || '0', 10);
+            return isFinite(n) ? n : 0;
+        });
+    }
+
+    function compareVersionStrings(current, latest) {
+        var a = normalizeVersionParts(current);
+        var b = normalizeVersionParts(latest);
+        var max = Math.max(a.length, b.length);
+        for (var i = 0; i < max; i++) {
+            var av = a[i] || 0;
+            var bv = b[i] || 0;
+            if (av < bv) return -1;
+            if (av > bv) return 1;
+        }
+        return 0;
+    }
+
+    function renderBrowserReleaseAlert(latestVersion, releaseUrl) {
+        if (!latestVersion) return;
+        if ($('#aacr2-update-alert').length) return;
+        var current = '[% current_version %]';
+        var safeUrl = releaseUrl || '[% plugin_repo_url %]';
+        var html = ''
+            + '<div class="alert alert-warning" id="aacr2-update-alert">'
+            + '<p><i class="fa fa-exclamation-circle"></i> New release available: '
+            + escapeHtml(latestVersion) + ' (current ' + escapeHtml(current) + ').</p>'
+            + '<p><a href="' + escapeHtml(safeUrl) + '" target="_blank" rel="noopener">View release on GitHub</a></p>'
+            + '</div>';
+        $('.main .row .col-sm-10 main h1').first().after(html);
+    }
+
+    function checkBrowserReleaseNotification() {
+        var apiUrl = '[% plugin_releases_api %]';
+        if (!apiUrl) return;
+        fetch(apiUrl, {
+            method: 'GET',
+            headers: { 'Accept': 'application/vnd.github+json' }
+        })
+            .then(function(response) {
+                if (!response.ok) return null;
+                return response.json();
+            })
+            .then(function(data) {
+                if (!data || typeof data !== 'object') return;
+                var latest = (data.tag_name || data.name || '').toString().trim();
+                if (!latest) return;
+                if (compareVersionStrings('[% current_version %]', latest) >= 0) return;
+                renderBrowserReleaseAlert(latest, data.html_url || '[% plugin_repo_url %]');
+            })
+            .catch(function() {
+                // Keep UI quiet on release-check network failures.
+            });
     }
 
     function looksLikeKohaLoginHtml(text) {
@@ -1743,20 +1841,47 @@
         });
     }
 
+    var progressFetchController = null;
+    var isConfigurationSubmitInProgress = false;
+    var isConfigurePageUnloading = false;
+
+    function shouldIgnoreProgressLoadError(err) {
+        if (isConfigurationSubmitInProgress || isConfigurePageUnloading) return true;
+        var name = ((err && err.name) || '').toString().toLowerCase();
+        var message = ((err && err.message) || '').toString().toLowerCase();
+        if (name === 'aborterror') return true;
+        if (message.indexOf('aborted') !== -1 || message.indexOf('abort') !== -1) return true;
+        return false;
+    }
+
     function fetchProgressTable(pluginPath) {
+        if (isConfigurePageUnloading) return;
+        if (progressFetchController) {
+            try { progressFetchController.abort(); } catch (abortErr) { /* ignore */ }
+        }
+        var controller = (window.AbortController ? new AbortController() : null);
+        progressFetchController = controller;
         fetchJson(buildPluginMethodUrl(pluginPath, 'guide_progress_list', { op: 'plugin_api' }), {
             method: 'GET',
-            headers: { 'Accept': 'application/json' }
+            headers: { 'Accept': 'application/json' },
+            signal: controller ? controller.signal : undefined
         })
             .then(function(data) {
+                if (isConfigurePageUnloading || isConfigurationSubmitInProgress) return;
                 renderProgressTable((data && data.users) || []);
                 applyProgressFilters();
                 setupSortableTable('#aacr2-progress-table');
             })
             .catch(function(err) {
+                if (shouldIgnoreProgressLoadError(err)) return;
                 toastr.error('Progress load failed: ' + err.message);
-                $('#aacr2-progress-table tbody').html('<tr><td colspan="8">Unable to load progress.</td></tr>');
+                $('#aacr2-progress-table tbody').html('<tr><td colspan="10">Unable to load progress.</td></tr>');
                 updateProgressFilterOptions([]);
+            })
+            .finally(function() {
+                if (progressFetchController === controller) {
+                    progressFetchController = null;
+                }
             });
     }
 
@@ -1773,6 +1898,13 @@
         if (csrfValue && $('#csrf_token').length && !$('#csrf_token').val()) {
             $('#csrf_token').val(csrfValue);
         }
+        checkBrowserReleaseNotification();
+        $(window).on('beforeunload pagehide', function() {
+            isConfigurePageUnloading = true;
+            if (progressFetchController) {
+                try { progressFetchController.abort(); } catch (err) { /* ignore */ }
+            }
+        });
         var tabEls = document.querySelectorAll('#aacr2-config-tabs a[data-bs-toggle="tab"]');
         if (window.bootstrap && window.bootstrap.Tab) {
             tabEls.forEach(function(tabEl) {
@@ -1800,6 +1932,11 @@
             });
             $('#llm_api_provider').select2({
                 minimumResultsForSearch: Infinity,
+                width: 'style'
+            });
+            $('#ai_model').select2({
+                placeholder: 'Select a model',
+                allowClear: true,
                 width: 'style'
             });
         }
@@ -2270,6 +2407,9 @@
                 if (model.id === selectedId) option.attr('selected', 'selected');
                 $select.append(option);
             });
+            if ($.fn && $.fn.select2 && $select.data('select2')) {
+                $select.trigger('change.select2');
+            }
         }
 
         function loadOpenAiModels(force, selectedId) {
@@ -2294,12 +2434,7 @@
         }
 
         function filterOpenAiModels(models) {
-            var search = ($('#ai-model-search').val() || '').toLowerCase();
-            if (!search) return models;
-            return models.filter(function(model) {
-                var id = (model.id || '').toLowerCase();
-                return id.indexOf(search) !== -1;
-            });
+            return models || [];
         }
 
         function renderOpenAiModels(selectedId) {
@@ -2351,37 +2486,28 @@
             return Array.isArray(architecture[key]) && architecture[key].length;
         }
 
+        function openRouterModelSearchHints(model) {
+            var hints = [];
+            var tokens = getModelTokens(model);
+            if (tokens.includes('text')) hints.push('text');
+            if (tokens.includes('image')) hints.push('image');
+            if (hasModalities(model, 'input_modalities')) hints.push('input');
+            if (hasModalities(model, 'output_modalities')) hints.push('output');
+            if (isFreeModel(model)) hints.push('free');
+            hints = Array.from(new Set(hints));
+            return hints.length ? (' [' + hints.join(' ') + ']') : '';
+        }
+
         function filterOpenRouterModels(models) {
-            var search = ($('#ai-model-search').val() || '').toLowerCase();
-            var filters = {
-                text: $('#openrouter-filter-text').is(':checked'),
-                image: $('#openrouter-filter-image').is(':checked'),
-                input: $('#openrouter-filter-input').is(':checked'),
-                output: $('#openrouter-filter-output').is(':checked'),
-                free: $('#openrouter-filter-free').is(':checked')
-            };
-            return models.filter(function(model) {
-                var id = (model.id || '').toLowerCase();
-                var name = (model.name || '').toLowerCase();
-                var desc = (model.description || '').toLowerCase();
-                if (search && id.indexOf(search) === -1 && name.indexOf(search) === -1 && desc.indexOf(search) === -1) {
-                    return false;
-                }
-                var tokens = getModelTokens(model);
-                if (filters.text && tokens.length && !tokens.includes('text') && id.indexOf('text') === -1) return false;
-                if (filters.image && !tokens.includes('image') && id.indexOf('image') === -1) return false;
-                if (filters.input && !hasModalities(model, 'input_modalities')) return false;
-                if (filters.output && !hasModalities(model, 'output_modalities')) return false;
-                if (filters.free && !isFreeModel(model)) return false;
-                return true;
-            });
+            return models || [];
         }
 
         function renderOpenRouterModels(selectedId) {
             var filtered = filterOpenRouterModels(openRouterModels || []);
             var selected = selectedId || $('#ai_model').val() || modelSelections.openrouter || '';
             setModelSelect($('#ai_model'), filtered, selected, function(model) {
-                return model.name ? (model.name + ' (' + model.id + ')') : model.id;
+                var baseLabel = model.name ? (model.name + ' (' + model.id + ')') : model.id;
+                return baseLabel + openRouterModelSearchHints(model);
             }, { includeBlank: true });
         }
 
@@ -2412,8 +2538,8 @@
                 ? 'Direct browser mode: model list is fetched from provider API using browser key.'
                 : 'Server mode: model list is fetched through Koha using saved server key.';
             var text = normalized === 'openrouter'
-                ? 'Search and filter OpenRouter models (text/image/input/output/free).'
-                : 'Search OpenAI model IDs. Filters are available for OpenRouter only.';
+                ? 'Use the model dropdown search (type keywords like text/image/input/output/free).'
+                : 'Use the model dropdown search to find OpenAI model IDs.';
             text += ' ' + modeText;
             var warning = modelWarnings[normalized] || '';
             if (warning) text += ' ' + warning;
@@ -2463,9 +2589,6 @@
             var isOpenRouter = provider === 'openrouter';
             $('.openai-only').toggle(!isOpenRouter);
             $('.openrouter-only').toggle(isOpenRouter);
-            $('#ai-model-search').prop('disabled', false)
-                .attr('placeholder', isOpenRouter ? 'Search OpenRouter models...' : 'Search OpenAI models...');
-            $('.openrouter-filters input').prop('disabled', !isOpenRouter);
             $('#ai_api_key_clear').val('0');
             updateRequestModeHint();
             updateModelHint(provider);
@@ -2513,16 +2636,6 @@
         });
         $('#ai_model').on('change', function() {
             modelSelections[activeProvider] = $(this).val() || modelSelections[activeProvider] || '';
-        });
-        $('#ai-model-search').on('input', function() {
-            if (activeProvider === 'openrouter') {
-                renderOpenRouterModels();
-            } else {
-                renderOpenAiModels();
-            }
-        });
-        $('.openrouter-filters input').on('change', function() {
-            renderOpenRouterModels();
         });
 
         // Training progress
@@ -2648,6 +2761,14 @@
         updatePromptPlaceholders();
 
         $('form').on('submit', function() {
+            isConfigurationSubmitInProgress = true;
+            if (progressTimer) {
+                clearInterval(progressTimer);
+                progressTimer = null;
+            }
+            if (progressFetchController) {
+                try { progressFetchController.abort(); } catch (err) { /* ignore */ }
+            }
             if (!isDirectBrowserMode()) return;
             var provider = ($('#llm_api_provider').val() || 'OpenRouter').toLowerCase();
             var directKey = ($('#ai_api_key').val() || '').trim();
@@ -2677,6 +2798,7 @@
                 JSON.parse(editor.getValue());
             } catch (error) {
                 e.preventDefault();
+                isConfigurationSubmitInProgress = false;
                 alert('Invalid JSON in custom rules: ' + error.message);
                 return false;
             }

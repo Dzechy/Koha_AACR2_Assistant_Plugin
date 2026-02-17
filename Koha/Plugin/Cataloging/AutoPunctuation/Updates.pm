@@ -21,12 +21,13 @@ sub _check_for_updates {
     if ($cache->{checked_at} && ($cache->{checked_at} + $ttl) > $now) {
         return $cache;
     }
+    my $previous = (ref $cache eq 'HASH') ? $cache : {};
 
     my $result = {
         current_version => $Koha::Plugin::Cataloging::AutoPunctuation::VERSION,
         latest_version => '',
         update_available => 0,
-            release_url => $Koha::Plugin::Cataloging::AutoPunctuation::PLUGIN_REPO_URL,
+        release_url => $Koha::Plugin::Cataloging::AutoPunctuation::PLUGIN_REPO_URL,
         checked_at => $now,
         error => '',
     };
@@ -36,21 +37,47 @@ sub _check_for_updates {
         agent => 'Koha-AACR2-Assistant/' . $Koha::Plugin::Cataloging::AutoPunctuation::VERSION
     );
     $ua->env_proxy;
+    my $data;
     my $response = $ua->get($Koha::Plugin::Cataloging::AutoPunctuation::PLUGIN_RELEASES_API, 'Accept' => 'application/vnd.github+json');
-    if (!$response->is_success) {
+    if ($response->is_success) {
+        try {
+            $data = from_json($response->decoded_content);
+        } catch {
+            $data = undef;
+        };
+    }
+    if (!$data || ref $data ne 'HASH') {
+        my $tags_api = $Koha::Plugin::Cataloging::AutoPunctuation::PLUGIN_RELEASES_API;
+        $tags_api =~ s{/releases/latest$}{/tags};
+        my $tags_response = $ua->get($tags_api, 'Accept' => 'application/vnd.github+json');
+        if ($tags_response->is_success) {
+            my $tags;
+            try {
+                $tags = from_json($tags_response->decoded_content);
+            } catch {
+                $tags = undef;
+            };
+            if ($tags && ref $tags eq 'ARRAY' && @{$tags}) {
+                my $tag = $tags->[0] || {};
+                my $tag_name = $tag->{name} || '';
+                my $tag_url = $tag_name
+                    ? ($Koha::Plugin::Cataloging::AutoPunctuation::PLUGIN_REPO_URL . 'releases/tag/' . $tag_name)
+                    : $Koha::Plugin::Cataloging::AutoPunctuation::PLUGIN_REPO_URL;
+                $data = {
+                    tag_name => $tag_name,
+                    html_url => $tag_url
+                };
+            }
+        }
+    }
+    if (!$data || ref $data ne 'HASH') {
+        $result->{latest_version} = $previous->{latest_version} || '';
+        $result->{release_url} = $previous->{release_url} || $result->{release_url};
+        $result->{update_available} = $previous->{update_available} ? 1 : 0;
         $result->{error} = 'Unable to check for updates.';
         $self->store_data({ update_cache => to_json($result) });
         return $result;
     }
-
-    my $data;
-    try {
-        $data = from_json($response->decoded_content);
-    } catch {
-        $result->{error} = 'Invalid update response.';
-        $self->store_data({ update_cache => to_json($result) });
-        return $result;
-    };
 
     my $latest = $data->{tag_name} || $data->{name} || '';
     $latest =~ s/^\s+|\s+$//g;

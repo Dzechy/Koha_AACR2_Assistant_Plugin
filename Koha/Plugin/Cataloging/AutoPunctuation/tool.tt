@@ -175,7 +175,7 @@
                 </div>
                 [% END %]
                 [% IF update_info && update_info.update_available %]
-                <div class="alert alert-warning">
+                <div class="alert alert-warning" id="aacr2-update-alert">
                     <p><i class="fa fa-exclamation-circle"></i> New release available: [% update_info.latest_version %] (current [% current_version %]).</p>
                     <p><a href="[% update_info.release_url %]" target="_blank" rel="noopener">View release on GitHub</a></p>
                 </div>
@@ -553,6 +553,69 @@
         } else {
             statusEl.innerHTML = '<span class="label label-danger">Missing (browser)</span>';
         }
+    })();
+</script>
+<script>
+    (function() {
+        if (document.getElementById('aacr2-update-alert')) return;
+        function normalizeVersionParts(version) {
+            var text = (version || '').toString().replace(/^[^0-9]*/, '');
+            if (!text) return [0];
+            return text.split('.').map(function(part) {
+                var cleaned = (part || '').toString().replace(/[^0-9].*$/, '');
+                var n = parseInt(cleaned || '0', 10);
+                return isFinite(n) ? n : 0;
+            });
+        }
+        function compareVersions(current, latest) {
+            var a = normalizeVersionParts(current);
+            var b = normalizeVersionParts(latest);
+            var max = Math.max(a.length, b.length);
+            for (var i = 0; i < max; i++) {
+                var av = a[i] || 0;
+                var bv = b[i] || 0;
+                if (av < bv) return -1;
+                if (av > bv) return 1;
+            }
+            return 0;
+        }
+        function escapeHtml(value) {
+            return (value === undefined || value === null ? '' : String(value))
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+        fetch('[% plugin_releases_api %]', {
+            method: 'GET',
+            headers: { 'Accept': 'application/vnd.github+json' }
+        })
+            .then(function(response) {
+                if (!response.ok) return null;
+                return response.json();
+            })
+            .then(function(data) {
+                if (!data || typeof data !== 'object') return;
+                var latest = (data.tag_name || data.name || '').toString().trim();
+                if (!latest) return;
+                if (compareVersions('[% current_version %]', latest) >= 0) return;
+                if (document.getElementById('aacr2-update-alert')) return;
+                var releaseUrl = (data.html_url || '[% plugin_repo_url %]').toString();
+                var html = ''
+                    + '<div class="alert alert-warning" id="aacr2-update-alert">'
+                    + '<p><i class="fa fa-exclamation-circle"></i> New release available: '
+                    + escapeHtml(latest) + ' (current [% current_version %]).</p>'
+                    + '<p><a href="' + escapeHtml(releaseUrl) + '" target="_blank" rel="noopener">View release on GitHub</a></p>'
+                    + '</div>';
+                var heading = document.querySelector('.main .row .col-sm-10 main h1');
+                if (heading && heading.insertAdjacentHTML) {
+                    heading.insertAdjacentHTML('afterend', html);
+                }
+            })
+            .catch(function() {
+                // Keep UI quiet on release-check network failures.
+            });
     })();
 </script>
 [% INCLUDE 'intranet-bottom.inc' %]
