@@ -1,5 +1,5 @@
 [% INCLUDE 'doc-head-open.inc' %]
-<title>Koha: AACR2 MARC21 Intellisense + Guardrails Configuration</title>
+<title>Koha: Koha_AACR2_Assistant_Plugin Configuration</title>
 [% INCLUDE 'doc-head-close.inc' %]
 [% INCLUDE 'calendar.inc' %]
 <style>
@@ -135,6 +135,20 @@
     .table-tools input[type="text"] {
         max-width: 280px;
     }
+    .openrouter-filters {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 8px;
+        align-items: center;
+    }
+    .openrouter-filters label {
+        margin: 0;
+        font-weight: normal;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+    }
     .progress-controls {
         display: flex;
         flex-wrap: wrap;
@@ -222,13 +236,13 @@
 <div id="breadcrumbs">
     <a href="/cgi-bin/koha/mainpage.pl">Home</a> ›
     <a href="/cgi-bin/koha/plugins/plugins-home.pl">Plugins</a> ›
-    <a href="#" class="active">AACR2 MARC21 Intellisense + Guardrails Configuration</a>
+    <a href="#" class="active">Koha_AACR2_Assistant_Plugin Configuration</a>
 </div>
 <div class="main container-fluid">
     <div class="row">
         <div class="col-sm-10 col-sm-push-2">
             <main>
-                <h1>AACR2 MARC21 Intellisense + Guardrails Configuration</h1>
+                <h1>Koha_AACR2_Assistant_Plugin Configuration</h1>
 
                 [% IF settings.last_updated && !(save_errors && save_errors.size) %]
                 <div class="alert alert-success">
@@ -374,10 +388,18 @@
                                     <li id="ai-model-row">
                                         <label for="ai_model">Model:</label>
                                         <div class="table-tools">
+                                            <input type="text" id="ai-model-search" class="form-control input-sm" style="width: 320px;" placeholder="Search OpenRouter models..."/>
                                             <select name="ai_model" id="ai_model" class="form-control" style="width: 460px;"></select>
                                             <button type="button" class="btn btn-xs btn-default" id="refresh-ai-models">
                                                 <i class="fa fa-refresh"></i> Refresh
                                             </button>
+                                        </div>
+                                        <div class="openrouter-filters">
+                                            <label><input type="checkbox" id="openrouter-filter-text"/> text</label>
+                                            <label><input type="checkbox" id="openrouter-filter-image"/> image</label>
+                                            <label><input type="checkbox" id="openrouter-filter-input"/> input</label>
+                                            <label><input type="checkbox" id="openrouter-filter-output"/> output</label>
+                                            <label><input type="checkbox" id="openrouter-filter-free"/> free</label>
                                         </div>
                                         <span class="hint" id="ai-model-hint"></span>
                                     </li>
@@ -690,7 +712,7 @@
                                                 <th class="sortable" data-sort="steps_skipped">Module Steps Skipped</th>
                                                 <th class="sortable" data-sort="total_steps_completed">Total Steps Done</th>
                                                 <th class="sortable" data-sort="total_steps_skipped">Total Steps Skipped</th>
-                                                <th class="sortable" data-sort="summary">Summary</th>
+                                                <th class="sortable" data-sort="summary">Completion Progress</th>
                                                 <th class="sortable" data-sort="updated_at">Last Updated</th>
                                             </tr>
                                         </thead>
@@ -1375,7 +1397,7 @@
             toastr.warning('No visible progress rows to export.');
             return;
         }
-        var headers = ['User ID', 'Name', 'Tier', 'Module', 'Module Steps Done', 'Module Steps Skipped', 'Total Steps Done', 'Total Steps Skipped', 'Summary', 'Last Updated'];
+        var headers = ['User ID', 'Name', 'Tier', 'Module', 'Module Steps Done', 'Module Steps Skipped', 'Total Steps Done', 'Total Steps Skipped', 'Completion Progress', 'Last Updated'];
         var esc = function(value) {
             var text = (value === undefined || value === null) ? '' : String(value);
             return '"' + text.replace(/"/g, '""') + '"';
@@ -1578,7 +1600,7 @@
             toastr.warning('No visible progress rows to export.');
             return;
         }
-        var headers = ['User ID', 'Name', 'Tier', 'Module', 'Module Steps Done', 'Module Steps Skipped', 'Total Steps Done', 'Total Steps Skipped', 'Summary', 'Last Updated'];
+        var headers = ['User ID', 'Name', 'Tier', 'Module', 'Module Steps Done', 'Module Steps Skipped', 'Total Steps Done', 'Total Steps Skipped', 'Completion Progress', 'Last Updated'];
         var stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
         try {
             var xlsxBytes = buildXlsxWorkbookBytes(headers, rows);
@@ -1851,6 +1873,9 @@
         var message = ((err && err.message) || '').toString().toLowerCase();
         if (name === 'aborterror') return true;
         if (message.indexOf('aborted') !== -1 || message.indexOf('abort') !== -1) return true;
+        if ((name === 'typeerror' || name === 'error') && message.indexOf('networkerror when attempting to fetch resource') !== -1) {
+            return true;
+        }
         return false;
     }
 
@@ -2434,7 +2459,16 @@
         }
 
         function filterOpenAiModels(models) {
-            return models || [];
+            var query = normalizeText($('#ai-model-search').val());
+            return (models || []).filter(function(model) {
+                if (!query) return true;
+                var haystack = normalizeText((model && model.id) || '')
+                    + ' '
+                    + normalizeText((model && model.name) || '')
+                    + ' '
+                    + normalizeText((model && model.owned_by) || '');
+                return haystack.indexOf(query) !== -1;
+            });
         }
 
         function renderOpenAiModels(selectedId) {
@@ -2499,7 +2533,27 @@
         }
 
         function filterOpenRouterModels(models) {
-            return models || [];
+            var query = normalizeText($('#ai-model-search').val());
+            var wantsText = $('#openrouter-filter-text').is(':checked');
+            var wantsImage = $('#openrouter-filter-image').is(':checked');
+            var wantsInput = $('#openrouter-filter-input').is(':checked');
+            var wantsOutput = $('#openrouter-filter-output').is(':checked');
+            var wantsFree = $('#openrouter-filter-free').is(':checked');
+            return (models || []).filter(function(model) {
+                var haystack = normalizeText((model && model.id) || '')
+                    + ' '
+                    + normalizeText((model && model.name) || '')
+                    + ' '
+                    + normalizeText((model && model.description) || '');
+                if (query && haystack.indexOf(query) === -1) return false;
+                var tokens = getModelTokens(model);
+                if (wantsText && tokens.indexOf('text') === -1) return false;
+                if (wantsImage && tokens.indexOf('image') === -1 && tokens.indexOf('vision') === -1) return false;
+                if (wantsInput && !hasModalities(model, 'input_modalities') && tokens.indexOf('input') === -1) return false;
+                if (wantsOutput && !hasModalities(model, 'output_modalities') && tokens.indexOf('output') === -1) return false;
+                if (wantsFree && !isFreeModel(model)) return false;
+                return true;
+            });
         }
 
         function renderOpenRouterModels(selectedId) {
@@ -2538,8 +2592,8 @@
                 ? 'Direct browser mode: model list is fetched from provider API using browser key.'
                 : 'Server mode: model list is fetched through Koha using saved server key.';
             var text = normalized === 'openrouter'
-                ? 'Use the model dropdown search (type keywords like text/image/input/output/free).'
-                : 'Use the model dropdown search to find OpenAI model IDs.';
+                ? 'Use model search and filters to find OpenRouter models (text/image/input/output/free).'
+                : 'Use model search to find OpenAI model IDs.';
             text += ' ' + modeText;
             var warning = modelWarnings[normalized] || '';
             if (warning) text += ' ' + warning;
@@ -2589,6 +2643,11 @@
             var isOpenRouter = provider === 'openrouter';
             $('.openai-only').toggle(!isOpenRouter);
             $('.openrouter-only').toggle(isOpenRouter);
+            $('#ai-model-search').attr('placeholder', isOpenRouter ? 'Search OpenRouter models...' : 'Search OpenAI models...');
+            $('.openrouter-filters input').prop('disabled', !isOpenRouter);
+            if (!isOpenRouter) {
+                $('.openrouter-filters input').prop('checked', false);
+            }
             $('#ai_api_key_clear').val('0');
             updateRequestModeHint();
             updateModelHint(provider);
@@ -2636,6 +2695,18 @@
         });
         $('#ai_model').on('change', function() {
             modelSelections[activeProvider] = $(this).val() || modelSelections[activeProvider] || '';
+        });
+        $('#ai-model-search').on('input', function() {
+            if (activeProvider === 'openrouter') {
+                renderOpenRouterModels();
+            } else {
+                renderOpenAiModels();
+            }
+        });
+        $('.openrouter-filters input').on('change', function() {
+            if (activeProvider === 'openrouter') {
+                renderOpenRouterModels();
+            }
         });
 
         // Training progress

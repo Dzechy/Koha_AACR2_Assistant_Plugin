@@ -77,9 +77,10 @@ sub _ai_error_status {
     return '503 Service Unavailable' if $error =~ /circuit breaker open/;
     return '503 Service Unavailable' if $error =~ /ai features are disabled|missing api key|ai model not configured/;
     return '422 Unprocessable Entity' if $error =~ /invalid request|excluded from ai assistance|no aacr2 rule defined/;
+    return '502 Bad Gateway' if $error =~ /response was empty|response was not valid json|invalid ai response format/;
     return '502 Bad Gateway' if $error =~ /api error|provider request failed/;
     return '500 Internal Server Error' if $error =~ /request failed|exception/;
-    return '422 Unprocessable Entity';
+    return '500 Internal Server Error';
 }
 
 sub api_classify {
@@ -317,6 +318,21 @@ sub ai_suggest {
             my $provider_result = $self->_call_ai_provider($settings, $prompt, {
                 expect_json => $expect_json
             });
+            if ($expect_json
+                && $provider_result
+                && ref($provider_result) eq 'HASH'
+                && $provider_result->{error}
+                && $provider_result->{error} =~ /response was empty/i) {
+                my $fallback_result = $self->_call_ai_provider($settings, $prompt, {
+                    expect_json => 0
+                });
+                if ($fallback_result && ref($fallback_result) eq 'HASH' && !$fallback_result->{error}) {
+                    $fallback_result->{parse_error} = 'Strict JSON mode returned empty output; used plain-text fallback.';
+                    $provider_result = $fallback_result;
+                } elsif ($fallback_result && ref($fallback_result) eq 'HASH' && $fallback_result->{error}) {
+                    $provider_result->{error} .= ' Plain-text fallback also failed: ' . $fallback_result->{error};
+                }
+            }
             my $raw_text = $provider_result->{raw_text} || '';
             my $was_truncated = $provider_result->{truncated} ? 1 : 0;
             my $debug = _build_ai_debug_payload($self, $settings, $provider_result);

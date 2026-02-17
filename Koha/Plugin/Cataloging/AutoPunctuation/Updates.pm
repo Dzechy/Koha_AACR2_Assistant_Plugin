@@ -34,7 +34,7 @@ sub _check_for_updates {
 
     my $ua = LWP::UserAgent->new(
         timeout => 6,
-        agent => 'Koha-AACR2-Assistant/' . $Koha::Plugin::Cataloging::AutoPunctuation::VERSION
+        agent => 'Koha_AACR2_Assistant_Plugin/' . $Koha::Plugin::Cataloging::AutoPunctuation::VERSION
     );
     $ua->env_proxy;
     my $data;
@@ -141,7 +141,7 @@ sub _fetch_openrouter_models {
         'Accept' => 'application/json',
         'Content-Type' => 'application/json',
         'HTTP-Referer' => $Koha::Plugin::Cataloging::AutoPunctuation::PLUGIN_REPO_URL,
-        'X-Title' => 'Koha AACR2 Assistant',
+        'X-Title' => 'Koha_AACR2_Assistant_Plugin',
     );
     if ($api_key) {
         unshift @headers, ( 'Authorization' => "Bearer $api_key" );

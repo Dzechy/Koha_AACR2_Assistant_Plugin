@@ -764,8 +764,8 @@
         const modal = $(`
             <div class="aacr2-guide-backdrop"></div>
             <div class="aacr2-about-modal">
-                <h4 style="margin-top:0;">About AACR2 Assistant</h4>
-                <p>AACR2 rules and MARC21 punctuation guardrails with optional AI guidance. Deterministic rules first; AI suggestions require explicit review.</p>
+                <h4 style="margin-top:0;">About Koha_AACR2_Assistant_Plugin</h4>
+                <p>AACR2-focused MARC21 assistant for Koha with guardrails, training guidance, and optional AI suggestions.</p>
                 <p><strong>Author:</strong> Duke Chijimaka Jonathan, University of Port Harcourt, Nigeria</p>
                 <p><strong>Email:</strong> djonathan002@uniport.edu.ng</p>
                 <p><strong>LinkedIn:</strong> <a href="https://linkedin.com/in/duke-j-a1a9b0260" target="_blank" rel="noopener">linkedin.com/in/duke-j-a1a9b0260</a></p>
@@ -777,10 +777,9 @@
                     <li>Mr. Stanislaus Richard Ezeonye (stanislaus.ezeonye@uniport.edu.ng)</li>
                 </ul>
                 <ul>
-                    <li>Auto-apply toggle or suggestion-only mode</li>
-                    <li>Inline indicators, ghost text, and quick fixes</li>
-                    <li>Strict coverage warnings and framework report</li>
-                    <li>Assistive AI with plain-text guidance</li>
+                    <li>AACR2 punctuation checks and quick fixes</li>
+                    <li>Cataloging guide progress tracking</li>
+                    <li>Optional AI suggestions for classification and subjects</li>
                 </ul>
                 <p><strong>AI provider:</strong> ${settings.llmApiProvider || 'OpenRouter'}</p>
                 <p><strong>Model:</strong> ${settings.aiModel || 'Not set'}</p>

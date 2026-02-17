@@ -30,21 +30,21 @@ use Koha::Plugin::Cataloging::AutoPunctuation::Http;
 use Koha::Plugin::Cataloging::AutoPunctuation::Api;
 use Koha::Plugin::Cataloging::AutoPunctuation::AI;
 
-our $VERSION = "2.0.0";
+our $VERSION = "1.0.0";
 our $PLUGIN_REPO_URL = "https://github.com/Dzechy/Koha_AACR2_Assistant_Plugin/";
 our $PLUGIN_RELEASES_API = "https://api.github.com/repos/Dzechy/Koha_AACR2_Assistant_Plugin/releases/latest";
 our $AUTHOR_LINKEDIN = "https://linkedin.com/in/duke-j-a1a9b0260";
 our $AI_PROMPT_VERSION = "2.3";
 
 our $metadata = {
-    name            => 'AACR2 MARC21 Intellisense + Guardrails',
+    name            => 'Koha_AACR2_Assistant_Plugin',
     author          => 'Duke Chijimaka Jonathan',
     date_authored   => '2025-06-02',
     date_updated    => '2025-06-30',
-    minimum_version => '19.05.00.000',
+    minimum_version => '19.05',
     maximum_version => undef,
     version         => $VERSION,
-    description     => 'AACR2 rules + MARC21 punctuation guardrails with assistive AI for Koha cataloging: deterministic rules first, structured guidance only, and coverage reporting across frameworks.',
+    description     => 'AACR2 cataloging assistant plugin for Koha with MARC21 guardrails, training guide, and optional AI guidance.',
     license         => 'MIT',
 };
 

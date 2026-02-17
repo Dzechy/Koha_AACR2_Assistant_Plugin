@@ -345,7 +345,7 @@
                 Authorization: `Bearer ${apiKey}`,
                 'Content-Type': 'application/json',
                 'HTTP-Referer': settings.pluginRepoUrl || window.location.origin,
-                'X-Title': 'Koha AACR2 Assistant'
+                'X-Title': 'Koha_AACR2_Assistant_Plugin'
             },
             body: JSON.stringify(payload)
         }, settings.aiTimeout);

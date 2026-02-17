@@ -163,7 +163,7 @@ sub _call_openrouter_responses {
             'Authorization' => "Bearer $api_key",
             'Content-Type' => 'application/json',
             'HTTP-Referer' => $Koha::Plugin::Cataloging::AutoPunctuation::PLUGIN_REPO_URL,
-            'X-Title' => 'Koha AACR2 Assistant',
+            'X-Title' => 'Koha_AACR2_Assistant_Plugin',
         ],
         to_json($payload)
     );
@@ -245,7 +245,7 @@ sub _call_openrouter_chat {
             'Authorization' => "Bearer $api_key",
             'Content-Type' => 'application/json',
             'HTTP-Referer' => $Koha::Plugin::Cataloging::AutoPunctuation::PLUGIN_REPO_URL,
-            'X-Title' => 'Koha AACR2 Assistant',
+            'X-Title' => 'Koha_AACR2_Assistant_Plugin',
         ],
         to_json($payload)
     );
