@@ -29,13 +29,14 @@
             }
             progress.setPhase('Parsing response');
             notifyTruncation(result);
-            renderAiPunctuationResults($('#aacr2-ai-panel'), settings, state, meta, result);
-            renderAiDebug($('#aacr2-ai-panel'), 'punctuation', result);
+            const mergedResult = mergeDeterministicPunctuationFallback(result, fieldContext, settings, state);
+            renderAiPunctuationResults($('#aacr2-ai-panel'), settings, state, meta, mergedResult);
+            renderAiDebug($('#aacr2-ai-panel'), 'punctuation', mergedResult);
             progress.stop();
-            if (result.degraded_mode && result.extracted_call_number) {
-                const message = `AI returned non-structured output; extracted LC candidate: ${result.extracted_call_number}.`;
+            if (mergedResult.degraded_mode && mergedResult.extracted_call_number) {
+                const message = `AI returned non-structured output; extracted LC candidate: ${mergedResult.extracted_call_number}.`;
                 toast('warning', message);
-                setStatus('Done', 'warning');
+                setStatus('Done', 'success');
             } else {
                 toast('info', 'Rules & punctuation suggestions ready.');
                 setStatus('Done', 'success');
@@ -63,6 +64,12 @@
     async function requestAiCatalogingAssist(settings, state, options) {
         const opts = options || {};
         const onStatus = typeof opts.onStatus === 'function' ? opts.onStatus : null;
+        if (!internFeatureAllowed(state, 'aiCataloging')) {
+            const message = 'AI cataloging requests are disabled for this internship profile.';
+            toast('warning', message);
+            if (onStatus) onStatus(`Error: ${message}`, 'error');
+            return;
+        }
         const titleInfo = getTitleWithSubtitle();
         if (!titleInfo.title) {
             const message = '245$a is required for AI cataloging guidance.';
@@ -167,7 +174,13 @@
                 rawText: formatCatalogingAssistantText(assistantMessage || result.raw_text_excerpt || ''),
                 errors
             };
-            updateAiCatalogingContext($('#aacr2-ai-panel'), settings, state);
+            state.aiSubjectHistory = {};
+            const $panel = $('#aacr2-ai-panel');
+            const $classInput = $panel.find('#aacr2-ai-classification-input');
+            if ($classInput.length && classification && !String($classInput.val() || '').trim()) {
+                $classInput.val(classification);
+            }
+            updateAiCatalogingContext($panel, settings, state);
             renderAiDebug($('#aacr2-ai-panel'), 'cataloging', result);
             progress.stop();
             const message = (!classification && !subjects.length)
@@ -177,7 +190,7 @@
             if (result && result.degraded_mode && result.extracted_call_number && result.extraction_source !== 'plain_text') {
                 const fallbackMessage = `AI returned non-structured output; extracted LC candidate: ${result.extracted_call_number}.`;
                 toast('warning', fallbackMessage);
-                setStatus('Done', 'warning');
+                setStatus('Done', 'success');
             } else {
                 setStatus('Done', classification || subjects.length ? 'success' : 'info');
             }
@@ -201,15 +214,139 @@
         }
     }
 
+    function aiPatchCount(findings) {
+        if (!Array.isArray(findings)) return 0;
+        let count = 0;
+        findings.forEach(finding => {
+            const fixes = Array.isArray(finding && finding.proposed_fixes) ? finding.proposed_fixes : [];
+            fixes.forEach(fix => {
+                const patchList = Array.isArray(fix && fix.patch) ? fix.patch : [];
+                patchList.forEach(patch => {
+                    if (patch && patch.op === 'replace_subfield') count += 1;
+                });
+            });
+        });
+        return count;
+    }
+
+    function convertDeterministicFindingToAiFinding(finding) {
+        if (!finding || typeof finding !== 'object') return null;
+        const ruleFix = finding.proposed_fixes && finding.proposed_fixes[0] && finding.proposed_fixes[0].patch && finding.proposed_fixes[0].patch[0];
+        const occurrence = normalizeOccurrence(finding.occurrence);
+        const patch = (ruleFix && ruleFix.op === 'replace_subfield')
+            ? {
+                op: 'replace_subfield',
+                tag: ruleFix.tag || finding.tag || '',
+                subfield: ruleFix.code || finding.subfield || '',
+                occurrence,
+                original_text: finding.current_value || '',
+                replacement_text: (ruleFix.value !== undefined && ruleFix.value !== null)
+                    ? String(ruleFix.value)
+                    : String(finding.expected_value || '')
+            }
+            : null;
+        return {
+            severity: finding.severity || 'INFO',
+            code: finding.code || 'AACR2_RULE',
+            message: finding.message || '',
+            rationale: finding.rationale || '',
+            tag: finding.tag || '',
+            subfield: finding.subfield || '',
+            occurrence,
+            current_value: finding.current_value || '',
+            expected_value: finding.expected_value || '',
+            confidence: 1,
+            proposed_fixes: patch ? [{ label: 'Apply AACR2 punctuation', patch: [patch] }] : []
+        };
+    }
+
+    function deterministicPunctuationFindings(fieldContext, settings, state) {
+        if (!fieldContext || !global.AACR2RulesEngine || typeof global.AACR2RulesEngine.validateField !== 'function') return [];
+        const rules = (state && Array.isArray(state.rules)) ? state.rules : [];
+        if (!rules.length) return [];
+        const result = global.AACR2RulesEngine.validateField(fieldContext, settings, rules);
+        const localFindings = Array.isArray(result && result.findings) ? result.findings : [];
+        return localFindings
+            .map(convertDeterministicFindingToAiFinding)
+            .filter(Boolean);
+    }
+
+    function mergeDeterministicPunctuationFallback(result, fieldContext, settings, state) {
+        const merged = (result && typeof result === 'object') ? { ...result } : {};
+        const aiFindings = Array.isArray(merged.findings) ? merged.findings.slice() : [];
+        const deterministicFindings = deterministicPunctuationFindings(fieldContext, settings, state);
+        if (!deterministicFindings.length) {
+            merged.findings = aiFindings;
+            merged.issues = Array.isArray(merged.issues) ? merged.issues : [];
+            return merged;
+        }
+        const assistant = (merged.assistant_message || '').toString().trim();
+        const noChangeText = /^no punctuation change needed\.?$/i.test(assistant);
+        const needsAugment = noChangeText || !aiFindings.length || aiPatchCount(aiFindings) === 0;
+        if (!needsAugment) {
+            merged.findings = aiFindings;
+            merged.issues = Array.isArray(merged.issues) ? merged.issues : [];
+            return merged;
+        }
+        const dedupe = new Set();
+        const combined = [];
+        aiFindings.concat(deterministicFindings).forEach(finding => {
+            if (!finding) return;
+            const key = [
+                finding.code || '',
+                finding.tag || '',
+                finding.subfield || '',
+                normalizeOccurrence(finding.occurrence),
+                finding.current_value || '',
+                finding.expected_value || '',
+                finding.message || ''
+            ].join('|');
+            if (dedupe.has(key)) return;
+            dedupe.add(key);
+            combined.push(finding);
+        });
+        merged.findings = combined;
+        merged.issues = Array.isArray(merged.issues) ? merged.issues : [];
+        if (noChangeText || !assistant) {
+            merged.assistant_message = 'Deterministic AACR2 checks found punctuation updates.';
+        }
+        return merged;
+    }
+
     function startAiRequestProgress(state, context, requestId, setStatus, initialPhase) {
         const startedAt = Date.now();
         let phase = initialPhase || 'Running';
         let stopped = false;
+        let slowInfoShown = false;
+        let slowWarningShown = false;
+        const normalizePhase = value => (value || '').toString().trim().toLowerCase();
+        const isWaitingPhase = () => normalizePhase(phase).includes('waiting for ai response');
+        const phaseHint = elapsed => {
+            if (!isWaitingPhase()) {
+                if (elapsed >= 8) return 'finalizing output';
+                return '';
+            }
+            if (elapsed >= 70) return 'still waiting; provider queue may be congested';
+            if (elapsed >= 50) return 'still waiting; you can cancel and retry';
+            if (elapsed >= 30) return 'model is still generating output';
+            if (elapsed >= 15) return 'provider is still preparing output';
+            return '';
+        };
+        const maybeNotifySlowWait = elapsed => {
+            if (!isWaitingPhase()) return;
+            if (!slowInfoShown && elapsed >= 20) {
+                slowInfoShown = true;
+                toast('info', 'AI response is taking longer than usual. You can keep waiting or click Cancel and retry.');
+            }
+            if (!slowWarningShown && elapsed >= 65) {
+                slowWarningShown = true;
+                toast('warning', 'AI response is still pending. Provider queues may be busy.');
+            }
+        };
         const format = () => {
             const elapsed = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
-            if (elapsed >= 45) return `${phase}... ${elapsed}s (still running; provider may be overloaded)`;
-            if (elapsed >= 25) return `${phase}... ${elapsed}s (model is still generating output)`;
-            if (elapsed >= 12) return `${phase}... ${elapsed}s (strict JSON mode can take longer)`;
+            const hint = phaseHint(elapsed);
+            if (hint) return `${phase}... ${elapsed}s (${hint})`;
             return `${phase}... ${elapsed}s`;
         };
         const tick = () => {
@@ -218,6 +355,8 @@
                 stopped = true;
                 return;
             }
+            const elapsed = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+            maybeNotifySlowWait(elapsed);
             setStatus(format(), 'info');
         };
         tick();
@@ -244,10 +383,7 @@
             return `${raw} Try again in 30-60 seconds, reduce request frequency, or switch model/account quota.`;
         }
         if (lower.includes('response was empty')) {
-            return `${raw} Retry once. If it repeats, lower reasoning effort/max tokens or disable strict JSON mode for this model.`;
-        }
-        if (lower.includes('not valid json') && settings && settings.aiStrictJsonMode) {
-            return `${raw} This model did not return strict JSON; retry or temporarily disable strict JSON mode.`;
+            return `${raw} Retry once. If it repeats, lower reasoning effort or max output tokens.`;
         }
         if (lower.includes('circuit breaker')) {
             return `${raw} Wait for the cooldown period, then retry.`;
@@ -302,6 +438,18 @@
         return cleaned;
     }
 
+    function normalizeLcClassForCallNumber(value) {
+        const text = (value || '').toString().trim();
+        if (!text) return '';
+        const match = text.match(/^([A-Z]{1,3})\s*(\d{1,4}(?:\s*\.\s*\d+)?)/i);
+        if (!match) return text.replace(/\s{2,}/g, ' ');
+        const cls = (match[1] || '').toUpperCase();
+        const number = (match[2] || '')
+            .replace(/\s*\.\s*/g, '.')
+            .replace(/\s+/g, '');
+        return cls && number ? `${cls}${number}` : text.replace(/\s{2,}/g, ' ');
+    }
+
     function sanitizeAiClassificationSuggestion(text) {
         const cleaned = normalizeClassificationSuggestion(text);
         if (!cleaned) return '';
@@ -343,10 +491,10 @@
         const text = (value || '').toString();
         if (!text.trim()) return '';
         const normalized = text.replace(/[\u2012\u2013\u2014\u2212]/g, '-').trim();
-        if (/^[A-Z]{1,3}\s*\d{1,4}(?:\.\d+)?\s*-\s*(?:[A-Z]{1,3}\s*)?\d{1,4}(?:\.\d+)?$/i.test(normalized)) {
+        if (/^[A-Z]{1,3}\s*\d{1,4}(?:\s*\.\s*\d+)?\s*-\s*(?:[A-Z]{1,3}\s*)?\d{1,4}(?:\s*\.\s*\d+)?$/i.test(normalized)) {
             return 'Classification ranges are not allowed. Provide a single class number.';
         }
-        if (/^\d{1,4}(?:\.\d+)?\s*-\s*\d{1,4}(?:\.\d+)?$/.test(normalized)) {
+        if (/^\d{1,4}(?:\s*\.\s*\d+)?\s*-\s*\d{1,4}(?:\s*\.\s*\d+)?$/.test(normalized)) {
             return 'Classification ranges are not allowed. Provide a single class number.';
         }
         return '';
@@ -444,10 +592,15 @@
             $list.text('(none)');
             return;
         }
+        const state = global.AACR2IntellisenseState || {};
+        const history = (state && state.aiSubjectHistory && typeof state.aiSubjectHistory === 'object')
+            ? state.aiSubjectHistory
+            : {};
         const formatter = global.AACR2AiTextExtract && typeof global.AACR2AiTextExtract.formatSubjectDisplay === 'function'
             ? global.AACR2AiTextExtract.formatSubjectDisplay
             : null;
         const readOnly = !!(global.AACR2IntellisenseState && global.AACR2IntellisenseState.readOnly);
+        const allowAiApplyActions = internFeatureAllowed(global.AACR2IntellisenseState, 'aiApplyActions');
         const rows = subjects.map((item, index) => {
             let label = '';
             if (formatter) {
@@ -468,20 +621,68 @@
             }
             label = (label || '').trim();
             if (!label) return '';
+            const entry = history[index] || {};
+            const showHistoryButtons = Array.isArray(entry.undoChanges) || Array.isArray(entry.redoChanges);
+            const canUndo = !!(Array.isArray(entry.undoChanges) && entry.undoChanges.length);
+            const canRedo = !!(Array.isArray(entry.redoChanges) && entry.redoChanges.length);
             return `
                 <div class="aacr2-ai-subject-row">
                     <span class="aacr2-ai-subject-label">${escapeAttr(label)}</span>
-                    <button type="button" class="btn btn-xs btn-primary aacr2-ai-subject-apply" data-index="${index}" ${readOnly ? 'disabled' : ''}>Apply</button>
+                    <button type="button" class="btn btn-xs btn-primary aacr2-ai-subject-apply" data-index="${index}" ${(readOnly || !allowAiApplyActions) ? 'disabled' : ''}>Apply</button>
+                    ${showHistoryButtons ? `<button type="button" class="btn btn-xs aacr2-btn-yellow aacr2-ai-subject-undo" data-index="${index}" ${(readOnly || !allowAiApplyActions || !canUndo) ? 'disabled' : ''}>Undo</button>` : ''}
+                    ${showHistoryButtons ? `<button type="button" class="btn btn-xs aacr2-btn-yellow aacr2-ai-subject-redo" data-index="${index}" ${(readOnly || !allowAiApplyActions || !canRedo) ? 'disabled' : ''}>Redo</button>` : ''}
                 </div>
             `;
         }).filter(Boolean);
         $list.html(rows.join(''));
     }
 
+    function cloneSubjectChanges(changes) {
+        if (!Array.isArray(changes)) return [];
+        return changes.map(change => ({ ...change }));
+    }
+
+    function applySubjectChangeList(changes, direction, state) {
+        if (!Array.isArray(changes) || !changes.length) return false;
+        const ordered = direction === 'previous' ? changes.slice().reverse() : changes.slice();
+        let changed = false;
+        ordered.forEach(change => {
+            if (!change) return;
+            const value = direction === 'previous' ? change.previous : change.next;
+            if ((change.kind || 'subfield') === 'indicator') {
+                if (setIndicatorValue(change.tag, change.indicator, change.occurrence, value || '')) {
+                    changed = true;
+                }
+                return;
+            }
+            const $field = findFieldElement(change.tag, change.code, change.occurrence);
+            if (!$field.length) return;
+            const current = ($field.val() || '').toString();
+            const next = (value || '').toString();
+            if (current === next) return;
+            $field.val(next);
+            $field.trigger('change');
+            markFieldForRevalidation(state, { tag: change.tag, code: change.code, occurrence: change.occurrence || '' });
+            changed = true;
+        });
+        return changed;
+    }
+
     function maybeShowAiGhost(element, findings, settings) {
         const state = global.AACR2IntellisenseState;
         if (state && state.readOnly) return;
-        const candidate = findings.find(f => f.confidence >= settings.aiConfidenceThreshold && f.severity !== 'ERROR');
+        const meta = parseFieldMeta(element);
+        if (!meta) return;
+        const occurrenceKey = normalizeOccurrenceKey(meta.occurrence);
+        const candidate = (findings || []).find(f => {
+            if (!f) return false;
+            if ((f.severity || '').toUpperCase() === 'ERROR') return false;
+            if (!f.proposed_fixes || !f.proposed_fixes[0] || !f.proposed_fixes[0].patch || !f.proposed_fixes[0].patch[0]) return false;
+            if ((f.tag || '') !== meta.tag) return false;
+            if ((f.subfield || '').toLowerCase() !== (meta.code || '').toLowerCase()) return false;
+            if (normalizeOccurrenceKey(f.occurrence || '') !== occurrenceKey) return false;
+            return Number(f.confidence || 0) >= Number(settings.aiConfidenceThreshold || 0);
+        });
         if (!candidate) return;
         const patch = candidate.proposed_fixes && candidate.proposed_fixes[0] && candidate.proposed_fixes[0].patch[0];
         if (!patch) return;
@@ -547,6 +748,56 @@
             return false;
         });
         return updated;
+    }
+
+    function findIndicatorElement(tag, indicator, occurrence) {
+        const selector = [
+            `input[id^="tag_${tag}_indicator${indicator}"]`,
+            `select[id^="tag_${tag}_indicator${indicator}"]`,
+            `input[name^="tag_${tag}_indicator${indicator}"]`,
+            `select[name^="tag_${tag}_indicator${indicator}"]`
+        ].join(',');
+        return $(selector).filter(function() {
+            const meta = parseIndicatorMeta(this);
+            return meta && meta.tag === tag && isSameOccurrence(meta.occurrence, occurrence);
+        }).first();
+    }
+
+    function setIndicatorValueWithUndo(tag, indicator, occurrence, value, state, changes, options) {
+        const opts = options || {};
+        const $target = findIndicatorElement(tag, indicator, occurrence);
+        if (!$target.length) return false;
+        const previous = ($target.val() || '').toString();
+        const next = (value || '').toString();
+        if (previous === next) return true;
+        if (!opts.skipUndo) {
+            recordUndo({ kind: 'indicator', tag, indicator, occurrence: occurrence || '' }, previous, next);
+        }
+        if (Array.isArray(changes)) {
+            changes.push({ kind: 'indicator', tag, indicator, occurrence: occurrence || '', previous, next });
+        }
+        $target.val(next);
+        $target.trigger('change');
+        return true;
+    }
+
+    function setSubfieldValueWithUndo($target, tag, code, occurrence, value, state, changes, options) {
+        const opts = options || {};
+        if (!$target || !$target.length) return false;
+        const previous = ($target.val() || '').toString();
+        const next = (value || '').toString();
+        if (previous === next) return true;
+        const target = { tag, code, occurrence: occurrence || '' };
+        if (!opts.skipUndo) {
+            recordUndo(target, previous, next);
+        }
+        if (Array.isArray(changes)) {
+            changes.push({ kind: 'subfield', tag, code, occurrence: occurrence || '', previous, next });
+        }
+        $target.val(next);
+        $target.trigger('change');
+        markFieldForRevalidation(state, target);
+        return true;
     }
 
     function guessAddFieldControl(tag) {
@@ -825,13 +1076,20 @@
         return '';
     }
 
+    function buildCallNumberParts(classification, cutter, year, prefix) {
+        const classCore = normalizeLcClassForCallNumber(classification || '');
+        const classSegment = [prefix || '', classCore].map(item => (item || '').toString().trim()).filter(Boolean).join(' ').trim();
+        const cutterSegment = [cutter || '', year || ''].map(item => (item || '').toString().trim()).filter(Boolean).join(' ').trim();
+        const full = [classSegment, cutterSegment].filter(Boolean).join(' ').trim();
+        return {
+            classSegment,
+            cutterSegment,
+            full
+        };
+    }
+
     function buildCallNumber(classification, cutter, year, prefix) {
-        const parts = [];
-        if (prefix) parts.push(prefix.trim());
-        if (classification) parts.push(classification.trim());
-        if (cutter) parts.push(cutter.trim());
-        if (year) parts.push(year.trim());
-        return parts.join(' ').trim();
+        return buildCallNumberParts(classification, cutter, year, prefix).full;
     }
 
     function parseLcTarget(target) {
@@ -963,6 +1221,7 @@
 
     function applySubjectObject(subject, settings, state, options) {
         const opts = options || {};
+        const changes = [];
         const normalized = normalizeSubjectObjects([subject])[0];
         if (!normalized || !normalized.subfields || !normalized.subfields.a) {
             return { ok: false, reason: 'invalid' };
@@ -990,12 +1249,11 @@
         const meta = parseFieldMeta($fieldA[0]);
         if (!meta) return { ok: false, reason: 'no_target' };
         const occurrence = meta.occurrence;
-        setIndicatorValue(chosenTag, 1, occurrence, ind1);
-        setIndicatorValue(chosenTag, 2, occurrence, ind2);
+        setIndicatorValueWithUndo(chosenTag, 1, occurrence, ind1, state, changes, opts);
+        setIndicatorValueWithUndo(chosenTag, 2, occurrence, ind2, state, changes, opts);
         ['a', 'x', 'y', 'z', 'v'].forEach(code => {
             collectSubfieldElements(chosenTag, code, occurrence).each(function() {
-                $(this).val('');
-                $(this).trigger('change');
+                setSubfieldValueWithUndo($(this), chosenTag, code, occurrence, '', state, changes, opts);
             });
         });
         const setValueAtIndex = (code, value, index) => {
@@ -1006,9 +1264,7 @@
             }
             const $target = $targets.eq(index);
             if ($target.length) {
-                $target.val(value);
-                $target.trigger('change');
-                markFieldForRevalidation(state, { tag: chosenTag, code, occurrence });
+                setSubfieldValueWithUndo($target, chosenTag, code, occurrence, value, state, changes, opts);
             }
         };
         setValueAtIndex('a', normalized.subfields.a, 0);
@@ -1019,7 +1275,7 @@
             });
         });
         if (existingSignatures && signature) existingSignatures.add(signature);
-        return { ok: true, reason: 'applied', tag: chosenTag };
+        return { ok: true, reason: 'applied', tag: chosenTag, changes };
     }
 
     function applyAiSubjects(settings, state) {

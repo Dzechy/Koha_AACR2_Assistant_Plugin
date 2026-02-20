@@ -201,6 +201,26 @@ sub _rules_match {
     }
     return 1;
 }
+sub _rules_match_for_coverage {
+    my ($self, $rule, $tag, $subfield) = @_;
+    return 0 unless $rule;
+    if ($rule->{tag}) {
+        return 0 unless $rule->{tag} eq $tag;
+    }
+    if ($rule->{tag_pattern}) {
+        my $compiled = $self->_safe_regex($rule->{tag_pattern});
+        return 0 unless $compiled && $tag =~ $compiled;
+    }
+    if ($rule->{subfields} && ref $rule->{subfields} eq 'ARRAY') {
+        return scalar grep { lc $_ eq lc $subfield } @{ $rule->{subfields} } ? 1 : 0;
+    }
+    if ($rule->{subfield_pattern}) {
+        my $compiled = $self->_safe_regex($rule->{subfield_pattern});
+        return 0 unless $compiled;
+        return $subfield =~ $compiled ? 1 : 0;
+    }
+    return 1;
+}
 sub _field_has_subfield {
     my ($self, $field, $code) = @_;
     return 0 unless $field && $field->{subfields} && $code;
@@ -321,12 +341,16 @@ sub _build_coverage_report {
         "SELECT frameworkcode, frameworktext FROM biblio_framework",
         { Slice => {} }
     ) || [];
+    my @framework_list = @{$frameworks};
+    if (!grep { (($_->{frameworkcode} || '') eq '') } @framework_list) {
+        push @framework_list, { frameworkcode => '', frameworktext => 'Default' };
+    }
     my @report;
     my @stubs;
     my %summary = (covered => 0, excluded => 0, not_covered => 0, total => 0);
-    for my $framework (@{$frameworks}) {
+    for my $framework (@framework_list) {
         next unless ref $framework eq 'HASH';
-        my $code = $framework->{frameworkcode};
+        my $code = defined $framework->{frameworkcode} ? $framework->{frameworkcode} : '';
         my $rows = $dbh->selectall_arrayref(
             "SELECT tagfield, tagsubfield FROM marc_subfield_structure WHERE frameworkcode = ?",
             { Slice => {} },
@@ -334,12 +358,15 @@ sub _build_coverage_report {
         ) || [];
         my @fields;
         my %counts = (total => 0, covered => 0, excluded => 0, not_covered => 0);
+        my %seen_fields;
         for my $row (@{$rows}) {
             next unless ref $row eq 'HASH';
             my ($tag, $subfield) = ($row->{tagfield}, $row->{tagsubfield});
             next unless $tag && $subfield;
+            my $field_key = lc($tag . '$' . $subfield);
+            next if $seen_fields{$field_key}++;
             my $excluded = $self->_is_excluded_field($settings, $tag, $subfield);
-            my @matched = grep { $self->_rules_match($_, $tag, $subfield, '*', '*') } @rules;
+            my @matched = grep { $self->_rules_match_for_coverage($_, $tag, $subfield) } @rules;
             my $status = $excluded ? 'excluded' : @matched ? 'covered' : 'not_covered';
             push @fields, {
                 tag => $tag,

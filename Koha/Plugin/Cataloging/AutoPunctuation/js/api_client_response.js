@@ -97,11 +97,6 @@
         return new Promise(resolve => setTimeout(resolve, ms));
     }
 
-    function strictJsonModeEnabled() {
-        const settings = global.AutoPunctuationSettings || {};
-        return !!settings.aiStrictJsonMode;
-    }
-
     function sanitizeServerMessage(text) {
         return (text || '')
             .toString()
@@ -211,51 +206,12 @@
         return '';
     }
 
-    function cleanJsonText(content) {
-        const text = (content || '').toString().trim();
-        if (!text) return '';
-        const fenced = text.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
-        if (fenced) return fenced[1].trim();
-        return text;
-    }
-
-    function tryParseJson(content) {
-        const cleaned = cleanJsonText(content);
-        if (!cleaned) return null;
-        try {
-            return JSON.parse(cleaned);
-        } catch (err) {
-            let start = cleaned.indexOf('{');
-            let end = cleaned.lastIndexOf('}');
-            if (start !== -1 && end > start) {
-                try {
-                    return JSON.parse(cleaned.slice(start, end + 1));
-                } catch (err2) {
-                    // fall through
-                }
-            }
-            start = cleaned.indexOf('[');
-            end = cleaned.lastIndexOf(']');
-            if (start !== -1 && end > start) {
-                try {
-                    return JSON.parse(cleaned.slice(start, end + 1));
-                } catch (err3) {
-                    // fall through
-                }
-            }
-        }
-        return null;
-    }
-
     async function callOpenAiResponses(prompt, settings, apiKey, options) {
         const model = (settings.aiModel || '').toString().trim();
         if (!model || model.toLowerCase() === 'default') return { error: 'OpenAI model not configured.' };
-        const expectJson = options && Object.prototype.hasOwnProperty.call(options, 'expectJson') ? !!options.expectJson : false;
         const systemPrompt = options && options.systemPrompt
             ? options.systemPrompt
-            : (expectJson
-                ? 'You are an AACR2 MARC21 cataloging assistant. Use AACR2/ISBD conventions only. Return JSON only.'
-                : 'You are an AACR2 MARC21 cataloging assistant. Use AACR2/ISBD conventions only. Return plain text only.');
+            : 'You are an AACR2 MARC21 cataloging assistant. Use AACR2/ISBD conventions only. Return plain text only.';
         const maxTokens = Math.round(Number(settings.aiMaxTokens) || 1024);
         const payload = {
             model,
@@ -303,26 +259,19 @@
         const content = extractResponseText(data);
         if (!content) {
             return {
-                error: 'OpenAI response was empty. Retry once. If this persists, reduce reasoning effort or disable strict JSON mode for this model.'
+                error: 'OpenAI response was empty. Retry once. If this persists, reduce reasoning effort or max output tokens for this model.'
             };
         }
         const truncated = detectTruncation(data);
-        if (!expectJson) return { rawText: content, textMode: true, truncated };
-        const parsed = tryParseJson(content);
-        return parsed
-            ? { data: parsed, rawText: content, rawResponse: rawBody, truncated }
-            : { error: 'OpenAI response was not valid JSON.', rawText: content, rawResponse: rawBody, parseError: 'Unable to parse JSON from model output.', truncated };
+        return { rawText: content, textMode: true, truncated };
     }
 
     async function callOpenRouter(prompt, settings, apiKey, options) {
         const model = (settings.aiModel || '').toString().trim();
         if (!model || model.toLowerCase() === 'default') return { error: 'OpenRouter model not configured.' };
-        const expectJson = options && Object.prototype.hasOwnProperty.call(options, 'expectJson') ? !!options.expectJson : false;
         const systemPrompt = options && options.systemPrompt
             ? options.systemPrompt
-            : (expectJson
-                ? 'You are an AACR2 MARC21 cataloging assistant. Use AACR2/ISBD conventions only. Return JSON only.'
-                : 'You are an AACR2 MARC21 cataloging assistant. Use AACR2/ISBD conventions only. Return plain text only.');
+            : 'You are an AACR2 MARC21 cataloging assistant. Use AACR2/ISBD conventions only. Return plain text only.';
         const maxTokens = Math.round(Number(settings.aiMaxTokens) || 1024);
         const payload = {
             messages: [
@@ -372,21 +321,11 @@
         const content = extractChatCompletionText(data) || extractResponseText(data);
         if (!content) {
             return {
-                error: 'OpenRouter response was empty. Retry once. If this persists, reduce reasoning effort or disable strict JSON mode for this model.'
+                error: 'OpenRouter response was empty. Retry once. If this persists, reduce reasoning effort or max output tokens for this model.'
             };
         }
         const truncated = detectTruncation(data);
-        if (!expectJson) return { rawText: content, textMode: true, truncated };
-        const parsed = tryParseJson(content);
-        return parsed
-            ? { data: parsed, rawText: content, rawResponse: rawBody, truncated }
-            : {
-                error: 'OpenRouter response was not valid JSON. The plugin will display plain text instead.',
-                rawText: content,
-                rawResponse: rawBody,
-                parseError: 'Unable to parse JSON from model output.',
-                truncated
-            };
+        return { rawText: content, textMode: true, truncated };
     }
 
 

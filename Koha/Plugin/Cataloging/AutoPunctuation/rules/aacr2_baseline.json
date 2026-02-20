@@ -432,7 +432,7 @@
         "b"
       ],
       "severity": "WARNING",
-      "rationale": "AACR2 subtitle follows after a space-colon-space at the end of 245$a.",
+      "rationale": "AACR2 subtitle follows after a space-colon-space, and if 245$c follows, slash punctuation should be carried at the end of 245$b.",
       "checks": [
         {
           "type": "punctuation",
@@ -457,7 +457,7 @@
           "when_following_subfields": [
             "c"
           ],
-          "suffix_if_following": "",
+          "suffix_if_following": " / ",
           "suffix_if_last": ".",
           "end_in": [
             ".",
@@ -466,7 +466,7 @@
           ],
           "normalize_punctuation": true,
           "severity": "WARNING",
-          "message": "Ensure subtitle punctuation is handled at the end of 245$a."
+          "message": "Ensure subtitle punctuation is handled at the end of 245$b."
         }
       ],
       "fixes": [
@@ -495,14 +495,14 @@
       ],
       "repeat_policy": "first_only",
       "severity": "WARNING",
-      "rationale": "AACR2 statement of responsibility follows with space-slash-space and ends with a period.",
+      "rationale": "AACR2 statement of responsibility in 245$c should not carry the slash prefix; slash punctuation should be attached to the preceding 245$b when present.",
       "checks": [
         {
           "type": "punctuation",
-          "prefix": " / ",
+          "strip_prefixes": [
+            "/"
+          ],
           "end_not_in": [
-            " /",
-            "/",
             " ;",
             ";",
             " ,",
@@ -516,7 +516,7 @@
           ],
           "normalize_punctuation": true,
           "severity": "WARNING",
-          "message": "Use space-slash-space before statement of responsibility."
+          "message": "Do not prefix 245$c with slash; keep terminal punctuation only."
         }
       ],
       "fixes": [
@@ -532,8 +532,8 @@
       ],
       "examples": [
         {
-          "before": "F. Scott Fitzgerald",
-          "after": " / F. Scott Fitzgerald."
+          "before": "/ F. Scott Fitzgerald",
+          "after": "F. Scott Fitzgerald."
         }
       ]
     },

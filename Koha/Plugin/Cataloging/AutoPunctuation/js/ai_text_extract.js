@@ -10,9 +10,18 @@
             .replace(/\s+/g, ' ');
     }
 
+    function normalizeLcClassNumber(number) {
+        return (number || '')
+            .toString()
+            .replace(/\s*\.\s*/g, '.')
+            .replace(/\s+/g, '');
+    }
+
     function formatLcCallNumber(cls, number) {
         if (!cls || !number) return '';
-        return `${cls.toUpperCase()} ${number}`;
+        const normalizedNumber = normalizeLcClassNumber(number);
+        if (!normalizedNumber) return '';
+        return `${cls.toUpperCase()}${normalizedNumber}`;
     }
 
     function isBlockedLcClassPrefix(value) {
@@ -74,7 +83,7 @@
         const normalized = normalizeLcText(text);
         const candidates = [];
         const spans = [];
-        const rangeRegex = /\b([A-Z]{1,3})\s*(\d{1,4}(?:\.\d+)?)\s*-\s*(?:([A-Z]{1,3})\s*)?(\d{1,4}(?:\.\d+)?)\b/gi;
+        const rangeRegex = /\b([A-Z]{1,3})\s*(\d{1,4}(?:\s*\.\s*\d+)?)\s*-\s*(?:([A-Z]{1,3})\s*)?(\d{1,4}(?:\s*\.\s*\d+)?)\b/gi;
         let match;
         while ((match = rangeRegex.exec(normalized)) !== null) {
             spans.push([match.index, rangeRegex.lastIndex]);
@@ -89,7 +98,7 @@
             });
             scrubbed = chars.join('');
         }
-        const singleRegex = /\b([A-Z]{1,3})\s*(\d{1,4}(?:\.\d+)?)\b/gi;
+        const singleRegex = /\b([A-Z]{1,3})\s*(\d{1,4}(?:\s*\.\s*\d+)?)\b/gi;
         while ((match = singleRegex.exec(scrubbed)) !== null) {
             const cls = (match[1] || '').toUpperCase();
             const number = match[2] || '';
@@ -281,8 +290,8 @@
     function detectClassificationRange(text) {
         if (!text) return '';
         const normalized = normalizeLcText(text).trim();
-        const isRange = /^[A-Z]{1,3}\s*\d{1,4}(?:\.\d+)?\s*-\s*(?:[A-Z]{1,3}\s*)?\d{1,4}(?:\.\d+)?$/i.test(normalized)
-            || /^\d{1,4}(?:\.\d+)?\s*-\s*\d{1,4}(?:\.\d+)?$/.test(normalized);
+        const isRange = /^[A-Z]{1,3}\s*\d{1,4}(?:\s*\.\s*\d+)?\s*-\s*(?:[A-Z]{1,3}\s*)?\d{1,4}(?:\s*\.\s*\d+)?$/i.test(normalized)
+            || /^\d{1,4}(?:\s*\.\s*\d+)?\s*-\s*\d{1,4}(?:\s*\.\s*\d+)?$/.test(normalized);
         if (isRange) {
             return 'Classification ranges are not allowed. Provide a single class number.';
         }
@@ -413,7 +422,7 @@
             const candidates = extractLcCallNumbers(match[1] || '');
             if (candidates.length) return candidates[0];
         }
-        match = String(text).match(/\b(lc)\b\s*[:\-]\s*([A-Z]{1,3}\s*\d{1,4}(?:\.\d+)?)/i);
+        match = String(text).match(/\b(lc)\b\s*[:\-]\s*([A-Z]{1,3}\s*\d{1,4}(?:\s*\.\s*\d+)?)/i);
         if (match) {
             const candidates = extractLcCallNumbers(match[2] || '');
             if (candidates.length) return candidates[0];

@@ -272,9 +272,9 @@
                     <header>
                         <span>AACR2 Training Guide</span>
                         <div>
-                            <button type="button" class="btn btn-xs btn-default" id="aacr2-guide-reset">Reset</button>
-                            <button type="button" class="btn btn-xs btn-default" id="aacr2-guide-minimize">Minimize</button>
-                            <button type="button" class="btn btn-xs btn-default" id="aacr2-guide-close">Close</button>
+                            <button type="button" class="btn btn-xs aacr2-btn-yellow" id="aacr2-guide-reset">Reset</button>
+                            <button type="button" class="btn btn-xs aacr2-btn-yellow" id="aacr2-guide-minimize">Minimize</button>
+                            <button type="button" class="btn btn-xs aacr2-btn-danger" id="aacr2-guide-close">Close</button>
                         </div>
                     </header>
                     <div class="aacr2-guide-content">
@@ -289,10 +289,10 @@
                         <div id="aacr2-guide-status" class="aacr2-guide-status" style="margin-top: 8px; font-size: 12px;"></div>
                         <div class="aacr2-guide-steps" id="aacr2-guide-steps"></div>
                         <div style="margin-top: 12px; text-align: right;">
-                            <button type="button" class="btn btn-xs btn-default" id="aacr2-guide-example">Insert Input</button>
-                            <button type="button" class="btn btn-xs btn-info" id="aacr2-guide-check">Check Step</button>
+                            <button type="button" class="btn btn-xs aacr2-btn-yellow" id="aacr2-guide-example">Insert Input</button>
+                            <button type="button" class="btn btn-xs btn-primary" id="aacr2-guide-check">Check Step</button>
                             <button type="button" class="btn btn-xs btn-warning" id="aacr2-guide-skip">Skip</button>
-                            <button type="button" class="btn btn-xs btn-default" id="aacr2-guide-prev">Prev</button>
+                            <button type="button" class="btn btn-xs aacr2-btn-yellow" id="aacr2-guide-prev">Prev</button>
                             <button type="button" class="btn btn-xs btn-primary" id="aacr2-guide-next">Next</button>
                         </div>
                     </div>
@@ -300,6 +300,8 @@
             `);
             $('body').append(modal);
             makeGuideDraggable();
+            recoverFloatingPanel($('.aacr2-guide-modal'), { minWidth: 320, minHeight: 220, right: 24, bottom: 24, buttonSelector: '#aacr2-guide-minimize' });
+            updateGuideToggleButton();
             const $moduleSelect = $('#aacr2-guide-module');
             $moduleSelect.empty();
             $moduleSelect.append('<option value="All">All areas</option>');
@@ -408,10 +410,25 @@
             return Math.min(idx, steps.length - 1);
         }
 
+        function completionTierFromPercent(percent) {
+            let value = Number(percent || 0);
+            if (!Number.isFinite(value)) value = 0;
+            value = Math.round(value);
+            if (value < 0) value = 0;
+            if (value > 100) value = 100;
+            if (value <= 33) return 'Tier 1';
+            if (value <= 66) return 'Tier 2';
+            return 'Tier 3';
+        }
+
         function updateProgressUI() {
             const stats = countSteps(steps);
             const doneCount = stats.completed + stats.skipped;
             const percent = stats.total ? Math.round((doneCount / stats.total) * 100) : 0;
+            const overallStats = countSteps(allSteps);
+            const overallDone = overallStats.completed + overallStats.skipped;
+            const overallPercent = overallStats.total ? Math.round((overallDone / overallStats.total) * 100) : 0;
+            const completionTier = completionTierFromPercent(overallPercent);
             $('#aacr2-guide-progress').html(
                 `<div>${doneCount} of ${stats.total} steps complete (Skipped ${stats.skipped})</div>` +
                 `<div class="aacr2-progress-bar"><span style="width:${percent}%"></span></div>`
@@ -419,7 +436,7 @@
             const moduleLabel = activeModule === 'All' ? 'All areas' : activeModule;
             $('#aacr2-guide-module-status').text(`${moduleLabel}: ${doneCount}/${stats.total} steps complete (Skipped ${stats.skipped}).`);
             const moduleSummary = moduleCompletionSummary();
-            const moduleText = `Modules complete: ${moduleSummary.modulesComplete}/${moduleSummary.modulesTotal}`;
+            const moduleText = `Modules complete: ${moduleSummary.modulesComplete}/${moduleSummary.modulesTotal} · Current tier: ${completionTier}`;
             $('#aacr2-guide-overall-status').text(moduleText);
             updateModuleDropdown();
             if (moduleSummary.modulesTotal > 0 && moduleSummary.modulesComplete === moduleSummary.modulesTotal) {
@@ -485,7 +502,6 @@
             const exampleExpectedValue = (example.expected || step.example_expected || '').replace(/\s+$/, '');
             const exampleRaw = exampleRawValue || '(no sample input provided)';
             const exampleExpected = exampleExpectedValue || '(no sample output provided)';
-            const tierLabel = step.tier ? `<div class="meta"><strong>${step.tier}</strong></div>` : '';
             const treeHtml = (step.tree && step.tree.length)
                 ? `<ul>${step.tree.map(item => `<li>${escapeAttr(item)}</li>`).join('')}</ul>`
                 : '';
@@ -493,7 +509,7 @@
                 ? `<div><em>Examples:</em><ul>${step.examples.map(ex => `<li>${escapeAttr(ex.before || '')} → ${escapeAttr(ex.after || '')}</li>`).join('')}</ul></div>`
                 : '';
             $('#aacr2-guide-body').html(
-                `<strong>${step.title}</strong>${tierLabel}<p>${step.text}</p>` +
+                `<strong>${step.title}</strong><p>${step.text}</p>` +
                 treeHtml +
                 `<div><em>Example input:</em> ${escapeAttr(exampleRaw)}</div>` +
                 `<div><em>Expected AACR2:</em> ${escapeAttr(exampleExpected)}</div>` +
@@ -683,49 +699,32 @@
             $(document).off('mousemove.aacr2guideDrag mouseup.aacr2guideDrag');
             $('.aacr2-guide-modal').remove();
             $('.aacr2-guide-highlight').removeClass('aacr2-guide-highlight');
+            updateGuideToggleButton();
         }
 
         function buildProgressSummary() {
             const overall = countSteps(allSteps);
             const moduleSummary = {};
-            const tierSummary = {};
-            const normalizeTierLabel = (value) => {
-                const raw = (value || '').toString().trim();
-                if (!raw) return 'Unspecified';
-                const match = raw.match(/tier\s*(\d+)/i) || raw.match(/^t\s*(\d+)$/i);
-                if (match && match[1]) return `Tier ${match[1]}`;
-                return raw;
-            };
             moduleData.modules.forEach(module => {
                 moduleSummary[module] = countSteps(moduleData.moduleMap.get(module) || []);
-            });
-            allSteps.forEach(step => {
-                const tierLabel = normalizeTierLabel(step.tier);
-                if (!tierSummary[tierLabel]) {
-                    tierSummary[tierLabel] = { total: 0, completed: 0, skipped: 0 };
-                }
-                tierSummary[tierLabel].total += 1;
-                if (progress.completed[step.key]) tierSummary[tierLabel].completed += 1;
-                if (progress.skipped[step.key]) tierSummary[tierLabel].skipped += 1;
             });
             const modules = moduleCompletionSummary();
             const currentStep = (steps && steps.length && steps[stepIndex]) ? steps[stepIndex] : null;
             const doneCount = overall.completed + overall.skipped;
             const completionPercent = overall.total ? Math.round((doneCount / overall.total) * 100) : 0;
-            const currentTier = currentStep ? normalizeTierLabel(currentStep.tier) : '';
+            const currentTier = completionTierFromPercent(completionPercent);
             return {
                 steps_total: overall.total,
                 steps_completed: overall.completed,
                 steps_skipped: overall.skipped,
                 completion_percent: completionPercent,
                 current_module: currentStep && currentStep.module ? currentStep.module : '',
-                current_tier: currentTier === 'Unspecified' ? '' : currentTier,
+                current_tier: currentTier,
                 current_step_key: currentStep && currentStep.key ? currentStep.key : '',
                 current_step_title: currentStep && currentStep.title ? currentStep.title : '',
                 modules_total: modules.modulesTotal,
                 modules_completed: modules.modulesComplete,
-                module_breakdown: moduleSummary,
-                tier_breakdown: tierSummary
+                module_breakdown: moduleSummary
             };
         }
 
@@ -754,6 +753,7 @@
             state.guideActive = false;
             state.guideRefresh = null;
             state.guideCurrentStep = null;
+            updateGuideToggleButton();
             toast('error', 'Unable to open the training guide. See console for details.');
             console.error('[AACR2 Assistant] Guide error:', err);
         }
@@ -763,34 +763,56 @@
         $('.aacr2-about-modal, .aacr2-guide-backdrop').remove();
         const modal = $(`
             <div class="aacr2-guide-backdrop"></div>
-            <div class="aacr2-about-modal">
-                <h4 style="margin-top:0;">About Koha_AACR2_Assistant_Plugin</h4>
-                <p>AACR2-focused MARC21 assistant for Koha with guardrails, training guidance, and optional AI suggestions.</p>
-                <p><strong>Author:</strong> Duke Chijimaka Jonathan, University of Port Harcourt, Nigeria</p>
-                <p><strong>Email:</strong> djonathan002@uniport.edu.ng</p>
-                <p><strong>LinkedIn:</strong> <a href="https://linkedin.com/in/duke-j-a1a9b0260" target="_blank" rel="noopener">linkedin.com/in/duke-j-a1a9b0260</a></p>
-                <p><strong>Plugin GitHub:</strong> <a href="https://github.com/Dzechy/Koha_AACR2_Assistant_Plugin/" target="_blank" rel="noopener">github.com/Dzechy/Koha_AACR2_Assistant_Plugin</a></p>
-                <p><strong>Acknowledgements:</strong></p>
-                <ul class="aacr2-ack-list">
-                    <li>Prof. Helen Uzoezi Emasealu (helen.emasealu@uniport.edu.ng)</li>
-                    <li>Dr. Millie Nne Horsfall (millie.horsfall@uniport.edu.ng)</li>
-                    <li>Mr. Stanislaus Richard Ezeonye (stanislaus.ezeonye@uniport.edu.ng)</li>
-                </ul>
-                <ul>
-                    <li>AACR2 punctuation checks and quick fixes</li>
-                    <li>Cataloging guide progress tracking</li>
-                    <li>Optional AI suggestions for classification and subjects</li>
-                </ul>
-                <p><strong>AI provider:</strong> ${settings.llmApiProvider || 'OpenRouter'}</p>
-                <p><strong>Model:</strong> ${settings.aiModel || 'Not set'}</p>
-                <div style="text-align: right;">
-                    <button type="button" class="btn btn-xs btn-default" id="aacr2-about-close">Close</button>
+            <div class="aacr2-about-modal aacr2-about-dialog">
+                <header>
+                    <span>About Koha_AACR2_Assistant_Plugin</span>
+                    <div>
+                        <button type="button" class="btn btn-xs aacr2-btn-danger" id="aacr2-about-close">Close</button>
+                    </div>
+                </header>
+                <div class="body">
+                    <p>AACR2-focused MARC21 assistant for Koha with guardrails, training guidance, and optional AI suggestions.</p>
+                    <ul>
+                        <li>AACR2 punctuation checks and quick fixes</li>
+                        <li>Cataloging guide progress tracking</li>
+                        <li>Optional AI suggestions for classification and subjects</li>
+                    </ul>
+                    <p><strong>Author:</strong> Duke Chijimaka Jonathan, University of Port Harcourt, Nigeria</p>
+                    <p><strong>Email:</strong> djonathan002@uniport.edu.ng</p>
+                    <p><strong>LinkedIn:</strong> <a href="https://linkedin.com/in/duke-j-a1a9b0260" target="_blank" rel="noopener">linkedin.com/in/duke-j-a1a9b0260</a></p>
+                    <p><strong>Plugin GitHub:</strong> <a href="https://github.com/Dzechy/Koha_AACR2_Assistant_Plugin/" target="_blank" rel="noopener">github.com/Dzechy/Koha_AACR2_Assistant_Plugin</a></p>
+                    <p><strong>Acknowledgements:</strong></p>
+                    <ul class="aacr2-ack-list">
+                        <li>Prof. Helen Uzoezi Emasealu (helen.emasealu@uniport.edu.ng)</li>
+                        <li>Dr. Millie Nne Horsfall (millie.horsfall@uniport.edu.ng)</li>
+                        <li>Mr. Stanislaus Richard Ezeonye (stanislaus.ezeonye@uniport.edu.ng)</li>
+                    </ul>
+                    <p><strong>AI provider:</strong> ${settings.llmApiProvider || 'OpenRouter'}</p>
+                    <p><strong>Model:</strong> ${settings.aiModel || 'Not set'}</p>
+                    <hr/>
+                    <h5 style="margin: 0 0 6px;">Buy Me a Coffee</h5>
+                    <p style="margin-bottom: 8px;">If this plugin saved you from one more AACR2 MARC rules headache, coffee keeps the devs and fixes coming.</p>
+                    <p><a href="https://selfany.com/kaacr2plugindonate" target="_blank" rel="noopener">Non-crypto donation link</a></p>
+                    <div class="meta" style="margin-top: 6px;">Crypto:</div>
+                    <ul class="aacr2-ack-list" style="margin-top: 6px;">
+                        <li>BTC: <code>19JSzRPB5qp3TKZVBeVUR8xmgntxKui5cc</code></li>
+                        <li>ETH (ERC20): <code>0x5cc9f67d0f8328a46b9f9e12a1cfbf1a379e5947</code></li>
+                        <li>USDT (ERC20): <code>0x5cc9f67d0f8328a46b9f9e12a1cfbf1a379e5947</code></li>
+                        <li>USDC (ERC20): <code>0x5cc9f67d0f8328a46b9f9e12a1cfbf1a379e5947</code></li>
+                        <li>LTC: <code>LesDgPh9BVp8SgbXqk8GbyCzHwnrgn7tDv</code></li>
+                    </ul>
                 </div>
             </div>
         `);
         $('body').append(modal);
+        makeAboutDialogDraggable();
+        const $about = $('.aacr2-about-dialog');
+        $about.show();
+        recoverFloatingPanel($about, { minWidth: 320, minHeight: 220, right: 24, bottom: 24 });
+        updateAboutToggleButton();
         $('#aacr2-about-close').on('click', () => {
-            $('.aacr2-about-modal, .aacr2-guide-backdrop').remove();
+            $('.aacr2-about-dialog, .aacr2-guide-backdrop').remove();
+            updateAboutToggleButton();
         });
     }
 

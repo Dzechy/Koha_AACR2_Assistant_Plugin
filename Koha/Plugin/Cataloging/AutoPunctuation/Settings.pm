@@ -39,6 +39,45 @@ sub _legacy_prompt_templates {
     };
 }
 
+sub _normalize_prompt_template {
+    my ($value) = @_;
+    my $text = defined $value ? "$value" : '';
+    $text =~ s/\r\n/\n/g;
+    $text =~ s/[ \t]+$//mg;
+    my @lines = split /\n/, $text, -1;
+    my @clean;
+    my %seen_singleton;
+    my %singleton = map { $_ => 1 } (
+        'payload_json:',
+        '{{payload_json}}',
+        '{{source_text}}',
+        'payload json:',
+        'source text:'
+    );
+    my $prev = '';
+    for my $line (@lines) {
+        my $trimmed = $line;
+        $trimmed =~ s/^\s+|\s+$//g;
+        if ($trimmed eq '') {
+            next if $prev eq '';
+            push @clean, '';
+            $prev = '';
+            next;
+        }
+        my $lower = lc($trimmed);
+        if ($singleton{$lower}) {
+            next if $seen_singleton{$lower}++;
+        }
+        next if $trimmed eq $prev;
+        push @clean, $line;
+        $prev = $trimmed;
+    }
+    $text = join("\n", @clean);
+    $text =~ s/\n{3,}/\n\n/g;
+    $text =~ s/^\s+|\s+$//g;
+    return $text;
+}
+
 sub _default_settings {
     my $prompt_defaults = Koha::Plugin::Cataloging::AutoPunctuation::AI::Prompt::_default_ai_prompt_templates();
     return {
@@ -53,10 +92,18 @@ sub _default_settings {
         internship_mode => 0,
         internship_users => '',
         internship_exclusion_list => '',
+        intern_allow_assistant_toggle => 0,
+        intern_allow_autoapply_toggle => 0,
+        intern_allow_cataloging_panel => 1,
+        intern_allow_ai_assist_toggle => 0,
+        intern_allow_panel_apply_actions => 0,
+        intern_allow_ai_cataloging => 0,
+        intern_allow_ai_punctuation => 0,
+        intern_allow_ai_apply_actions => 0,
         enforce_aacr2_guardrails => 1,
         enable_live_validation => 1,
         block_save_on_error => 0,
-        required_fields => '100a,245a,260c,300a,050a',
+        required_fields => '0030,0080,040c,942c,100a,245a,260c,300a,050a',
         excluded_tags => '',
         strict_coverage_mode => 0,
         enable_local_fields => 0,
@@ -79,7 +126,6 @@ sub _default_settings {
         ai_prompt_default => $prompt_defaults->{default},
         ai_prompt_cataloging => $prompt_defaults->{cataloging},
         ai_prompt_max_length => 16384,
-        ai_strict_json_mode => 0,
         ai_payload_preview => 0,
         ai_debug_include_raw_response => 0,
         ai_openrouter_response_format => 0,
@@ -97,7 +143,6 @@ sub _default_settings {
         llm_api_provider => 'OpenRouter',
         llm_api_key => '',
         openrouter_api_key => '',
-        ai_request_mode => 'server',
         last_updated => '',
     };
 }
@@ -128,6 +173,14 @@ sub _load_settings {
     $parsed = {} unless ref $parsed eq 'HASH';
     my $defaults = $self->_default_settings();
     my $settings = { %{$defaults}, %{$parsed} };
+    my $legacy_required = '100a,245a,260c,300a,050a';
+    my $expanded_required = $defaults->{required_fields} || '0030,0080,040c,942c,100a,245a,260c,300a,050a';
+    my $parsed_required = defined $parsed->{required_fields} ? "$parsed->{required_fields}" : '';
+    $parsed_required =~ s/\s+//g;
+    if ($parsed_required eq '' || lc($parsed_required) eq lc($legacy_required)) {
+        $settings->{required_fields} = $expanded_required;
+    }
+    delete $settings->{ai_request_mode};
     my $legacy_tuning_defaults = {
         ai_timeout => 30,
         ai_max_output_tokens => 1024,
@@ -157,6 +210,41 @@ sub _load_settings {
     if (defined $settings->{ai_prompt_cataloging} && defined $legacy->{cataloging}
         && $settings->{ai_prompt_cataloging} eq $legacy->{cataloging}) {
         $settings->{ai_prompt_cataloging} = $defaults->{ai_prompt_cataloging};
+    }
+    my $plain_prompts = Koha::Plugin::Cataloging::AutoPunctuation::AI::Prompt::_default_ai_prompt_templates_for_mode($self);
+    my $active_prompts = $plain_prompts;
+    my %known_prompt_variants = (
+        default => {},
+        cataloging => {}
+    );
+    for my $key (qw(default cataloging)) {
+        for my $candidate (
+            $plain_prompts->{$key},
+            $legacy->{$key},
+            $defaults->{ $key eq 'default' ? 'ai_prompt_default' : 'ai_prompt_cataloging' },
+            $active_prompts->{$key}
+        ) {
+            my $norm = _normalize_prompt_template($candidate);
+            next unless $norm ne '';
+            $known_prompt_variants{$key}{$norm} = 1;
+        }
+    }
+    for my $key (qw(default cataloging)) {
+        my $setting_key = $key eq 'default' ? 'ai_prompt_default' : 'ai_prompt_cataloging';
+        my $active_default = $active_prompts->{$key} || '';
+        my $value = defined $settings->{$setting_key} ? $settings->{$setting_key} : '';
+        my $norm_value = _normalize_prompt_template($value);
+        if ($norm_value eq '') {
+            $settings->{$setting_key} = $active_default;
+            next;
+        }
+        if ($known_prompt_variants{$key}{$norm_value}) {
+            $settings->{$setting_key} = $active_default;
+            next;
+        }
+        if ($norm_value ne $value) {
+            $settings->{$setting_key} = $norm_value;
+        }
     }
     if (exists $parsed->{enabled}) {
         my $raw_enabled = $parsed->{enabled};

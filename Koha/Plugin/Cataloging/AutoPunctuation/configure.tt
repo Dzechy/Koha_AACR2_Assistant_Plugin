@@ -4,8 +4,8 @@
 [% INCLUDE 'calendar.inc' %]
 <style>
     :root {
-        --aacr2-accent: #0c223f;
-        --aacr2-accent-soft: #e7eef7;
+        --aacr2-accent: #408540;
+        --aacr2-accent-soft: #eaf4ea;
         --aacr2-border: #d7dde6;
         --aacr2-surface: #f4f7fb;
         --aacr2-card: #ffffff;
@@ -76,6 +76,29 @@
             margin-bottom: 6px;
         }
     }
+    @media (max-width: 991px) {
+        .main .row > [class*="col-sm-"] {
+            float: none;
+            width: 100%;
+            left: auto;
+            right: auto;
+        }
+        .table-tools,
+        .openrouter-filters,
+        .progress-controls {
+            flex-direction: column;
+            align-items: stretch;
+        }
+        .table-tools .form-control,
+        .openrouter-filters .form-control,
+        .progress-controls .form-control {
+            width: 100% !important;
+            max-width: 100% !important;
+        }
+        .configuration-section .rows {
+            padding: 14px 12px 10px 12px;
+        }
+    }
     .configuration-section .rows > li:last-child {
         border-bottom: none;
     }
@@ -89,7 +112,7 @@
     .alert-success {
         background: #dff0d8;
         border: 1px solid #d6e9c6;
-        color: #3c763d;
+        color: #408540;
         padding: 10px;
         border-radius: 4px;
     }
@@ -98,10 +121,22 @@
     }
     #llm_api_provider {
         max-width: 260px;
+        width: 260px;
+    }
+    .configuration-section .rows > li.field-stack > label {
+        display: block;
+        min-width: 0;
+        margin-right: 0;
+        margin-bottom: 6px;
+    }
+    .configuration-section .rows > li.field-stack .field-stack-control {
+        max-width: 260px;
     }
     #llm_api_provider + .select2-container {
         max-width: 260px;
-        width: 100% !important;
+        width: 260px !important;
+        min-width: 180px;
+        display: block !important;
     }
     #llm_api_provider + .select2-container .select2-selection__rendered {
         overflow: hidden;
@@ -122,8 +157,49 @@
     .user-table th {
         background-color: var(--aacr2-surface);
     }
-    .user-table th.sortable {
+    .user-table th.sortable,
+    .coverage-table th.sortable {
         cursor: pointer;
+        position: relative;
+        padding-right: 24px;
+    }
+    .user-table th.sortable::before,
+    .user-table th.sortable::after,
+    .coverage-table th.sortable::before,
+    .coverage-table th.sortable::after {
+        content: '';
+        position: absolute;
+        right: 8px;
+        width: 0;
+        height: 0;
+        border-left: 4px solid transparent;
+        border-right: 4px solid transparent;
+    }
+    .user-table th.sortable::before,
+    .coverage-table th.sortable::before {
+        top: 38%;
+        border-bottom: 5px solid #a3b0be;
+    }
+    .user-table th.sortable::after,
+    .coverage-table th.sortable::after {
+        top: 54%;
+        border-top: 5px solid #a3b0be;
+    }
+    .user-table th.sortable.sort-asc::before,
+    .coverage-table th.sortable.sort-asc::before {
+        border-bottom-color: #2f6f9f;
+    }
+    .user-table th.sortable.sort-asc::after,
+    .coverage-table th.sortable.sort-asc::after {
+        border-top-color: #c6d1dc;
+    }
+    .user-table th.sortable.sort-desc::before,
+    .coverage-table th.sortable.sort-desc::before {
+        border-bottom-color: #c6d1dc;
+    }
+    .user-table th.sortable.sort-desc::after,
+    .coverage-table th.sortable.sort-desc::after {
+        border-top-color: #2f6f9f;
     }
     .table-tools {
         display: flex;
@@ -169,8 +245,8 @@
         font-weight: 600;
     }
     .ai-key-indicator.is-set {
-        background: #dff0d8;
-        color: #3c763d;
+        background: #eaf4ea;
+        color: #408540;
     }
     .ai-key-indicator.is-empty {
         background: #f5f5f5;
@@ -186,6 +262,7 @@
         border-radius: 6px;
         border: 1px solid var(--aacr2-border);
         font-family: monospace;
+        transition: border-color 0.2s ease, background-color 0.2s ease;
     }
     .coverage-table {
         width: 100%;
@@ -200,7 +277,7 @@
     .coverage-table th {
         background: var(--aacr2-surface);
     }
-    .coverage-status-covered { color: #3c763d; font-weight: bold; }
+    .coverage-status-covered { color: #408540; font-weight: bold; }
     .coverage-status-excluded { color: #8a6d3b; font-weight: bold; }
     .coverage-status-missing { color: #a94442; font-weight: bold; }
     .aacr2-tabs.nav-tabs {
@@ -308,19 +385,19 @@
                                     <li>
                                         <label for="enabled">Enable AACR2 Intellisense:</label>
                                         <input type="checkbox" name="enabled" id="enabled" value="1" [% IF settings.enabled %]checked[% END %]/>
-                                        <span class="hint">Check to enable AACR2 rules and guardrails on cataloging forms</span>
+                                        <span class="hint">Turn AACR2 checks on for cataloging forms.</span>
                                     </li>
                                     <li>
-                                        <label for="auto_apply_punctuation">Auto-Apply Punctuation:</label>
+                                        <label for="auto_apply_punctuation">Auto-Apply Fixes:</label>
                                         <input type="checkbox" name="auto_apply_punctuation" id="auto_apply_punctuation" value="1" [% IF settings.auto_apply_punctuation %]checked[% END %]/>
-                                        <span class="hint">When disabled, punctuation is suggested only and must be applied explicitly.</span>
+                                        <span class="hint">Off = suggestions only. On = apply fixes automatically.</span>
                                     </li>
                                     <li>
                                         <label for="default_standard">Cataloging Standard:</label>
                                         <select name="default_standard" id="default_standard" class="form-control" style="width: auto; display: inline-block;">
                                             <option value="AACR2" selected>AACR2</option>
                                         </select>
-                                        <span class="hint">AACR2 is enforced for MARC21 punctuation and guardrails.</span>
+                                        <span class="hint">AACR2 is used for MARC21 punctuation rules.</span>
                                     </li>
                                 </ol>
                             </fieldset>
@@ -332,36 +409,38 @@
                                     <li>
                                         <label for="ai_enable">Enable AI Assist:</label>
                                         <input type="checkbox" name="ai_enable" id="ai_enable" value="1" [% IF settings.ai_enable %]checked[% END %]/>
-                                        <span class="hint">AI is advisory only. Nothing is auto-applied.</span>
+                                        <span class="hint">Suggestions only. Review before saving.</span>
                                     </li>
                                     <li>
                                         <label for="ai_punctuation_explain">AI Field Guidance:</label>
                                         <input type="checkbox" name="ai_punctuation_explain" id="ai_punctuation_explain" value="1" [% IF settings.ai_punctuation_explain %]checked[% END %]/>
-                                        <span class="hint">Explain AACR2 field rules for the selected field (same-field only).</span>
+                                        <span class="hint">Show AACR2 punctuation guidance for the selected field.</span>
                                     </li>
                                     <li>
                                         <label for="ai_subject_guidance">AI Subject Guidance:</label>
                                         <input type="checkbox" name="ai_subject_guidance" id="ai_subject_guidance" value="1" [% IF settings.ai_subject_guidance %]checked[% END %]/>
-                                        <span class="hint">Suggest subject headings based on the title (guidance only).</span>
+                                        <span class="hint">Suggest subject headings from title source.</span>
                                     </li>
                                     <li>
                                         <label for="ai_callnumber_guidance">AI Call Number Guidance:</label>
                                         <input type="checkbox" name="ai_callnumber_guidance" id="ai_callnumber_guidance" value="1" [% IF settings.ai_callnumber_guidance %]checked[% END %]/>
-                                        <span class="hint">Suggest classification numbers (used to build call numbers).</span>
+                                        <span class="hint">Suggest an LC class number from title source.</span>
                                     </li>
                                     <li>
                                         <label for="lc_class_target">LC Classification Target (tag$subfield):</label>
                                         <input type="text" name="lc_class_target" id="lc_class_target" value="[% settings.lc_class_target || '050$a' %]" class="form-control" style="width: 140px;"/>
-                                        <span class="hint">Where fallback LC classification suggestions should apply (e.g., 050$a or 090$a).</span>
+                                        <span class="hint">Where suggested class numbers are written (example: 050$a).</span>
                                     </li>
-                                    <li>
+                                    <li class="field-stack">
                                         <label for="llm_api_provider">AI Provider:</label>
                                         [% SET ai_provider_norm = (settings.llm_api_provider || 'OpenRouter') | lower %]
-                                        <select name="llm_api_provider" id="llm_api_provider" class="form-control" style="width: 260px; max-width: 100%; display: inline-block;">
-                                            <option value="OpenRouter" [% IF ai_provider_norm == 'openrouter' %]selected[% END %]>OpenRouter (recommended)</option>
-                                            <option value="OpenAI" [% IF ai_provider_norm == 'openai' %]selected[% END %]>OpenAI</option>
-                                        </select>
-                                        <span class="hint">Choose which AI service to use.</span>
+                                        <div class="field-stack-control">
+                                            <select name="llm_api_provider" id="llm_api_provider" class="form-control" style="width: 260px; max-width: 100%;">
+                                                <option value="OpenRouter" [% IF ai_provider_norm == 'openrouter' %]selected[% END %]>OpenRouter (recommended)</option>
+                                                <option value="OpenAI" [% IF ai_provider_norm == 'openai' %]selected[% END %]>OpenAI</option>
+                                            </select>
+                                        </div>
+                                        <span class="hint">Choose OpenRouter or OpenAI.</span>
                                     </li>
                                     [% IF !encryption_ready %]
                                     <li>
@@ -395,49 +474,35 @@
                                             </button>
                                         </div>
                                         <div class="openrouter-filters">
-                                            <label><input type="checkbox" id="openrouter-filter-text"/> text</label>
+                                            <label><input type="checkbox" id="openrouter-filter-text" checked/> text</label>
                                             <label><input type="checkbox" id="openrouter-filter-image"/> image</label>
-                                            <label><input type="checkbox" id="openrouter-filter-input"/> input</label>
-                                            <label><input type="checkbox" id="openrouter-filter-output"/> output</label>
+                                            <label><input type="checkbox" id="openrouter-filter-input" checked/> input</label>
+                                            <label><input type="checkbox" id="openrouter-filter-output" checked/> output</label>
                                             <label><input type="checkbox" id="openrouter-filter-free"/> free</label>
                                         </div>
                                         <span class="hint" id="ai-model-hint"></span>
                                     </li>
                                     <li>
-                                        <label for="ai_request_mode">AI Request Mode:</label>
-                                        <select name="ai_request_mode" id="ai_request_mode" class="form-control" style="width: 260px;">
-                                            [% SET ai_request_mode_norm = (settings.ai_request_mode || 'server') | lower %]
-                                            <option value="server" [% IF ai_request_mode_norm == 'server' %]selected[% END %]>Server (Koha)</option>
-                                            <option value="direct" [% IF ai_request_mode_norm == 'direct' || ai_request_mode_norm == 'browser' %]selected[% END %]>Direct browser</option>
-                                        </select>
-                                        <span class="hint" id="ai-request-mode-hint">Server mode keeps provider keys on Koha. Direct browser mode requires a browser-local API key.</span>
-                                    </li>
-                                    <li>
-                                        <label for="ai_strict_json_mode">Structured JSON AI Output Mode:</label>
-                                        <input type="checkbox" name="ai_strict_json_mode" id="ai_strict_json_mode" value="1" [% IF settings.ai_strict_json_mode %]checked[% END %]/>
-                                        <span class="hint">When enabled, default prompts request strict JSON output for cleaner parsing/extraction. Some models may be slower or less reliable in strict mode.</span>
-                                    </li>
-                                    <li>
                                         <button type="button" class="btn btn-default" id="ai-test-connection">
                                             <i class="fa fa-plug"></i> Test Connection
                                         </button>
-                                        <span class="hint">Sends a lightweight request to confirm connectivity.</span>
+                                        <span class="hint">Run a quick provider connectivity check.</span>
                                     </li>
                                     <li>
                                         <label for="ai_prompt_default">Default AI Prompt (punctuation guidance):</label>
                                         <textarea name="ai_prompt_default" id="ai_prompt_default" class="ai-prompt-editor form-control" maxlength="[% ai_prompt_max_length || 16384 %]">[% settings.ai_prompt_default | html %]</textarea>
-                                        <span class="hint">Used for punctuation suggestions. Plain-text response recommended. Max [% ai_prompt_max_length || 16384 %] chars.</span>
+                                        <span class="hint" id="ai_prompt_default_hint">Prompt for punctuation suggestions. Max [% ai_prompt_max_length || 16384 %] chars.</span>
                                     </li>
                                     <li>
                                         <label for="ai_prompt_cataloging">Cataloging Prompt (classification/subjects):</label>
                                         <textarea name="ai_prompt_cataloging" id="ai_prompt_cataloging" class="ai-prompt-editor form-control" maxlength="[% ai_prompt_max_length || 16384 %]">[% settings.ai_prompt_cataloging | html %]</textarea>
-                                        <span class="hint">Used for record-level cataloging guidance. Leave blank to use the shipped default. `{{source_text}}` is supported.</span>
+                                        <span class="hint" id="ai_prompt_cataloging_hint">Prompt for class/subject suggestions. Leave blank for built-in default. Supports {{source_text}}.</span>
                                     </li>
                                     <li>
                                         <button type="button" class="btn btn-default btn-sm" id="reset-ai-prompts">
                                             <i class="fa fa-undo"></i> Reset Prompts To Defaults
                                         </button>
-                                        <span class="hint">Restores shipped prompts in both textareas. Save configuration to persist.</span>
+                                        <span class="hint">Restore built-in prompts. Save to keep changes.</span>
                                     </li>
                                 </ol>
                             </fieldset>
@@ -449,42 +514,42 @@
                                     <li>
                                         <label for="enforce_aacr2_guardrails">Enforce AACR2 Guardrails:</label>
                                         <input type="checkbox" name="enforce_aacr2_guardrails" id="enforce_aacr2_guardrails" value="1" [% IF settings.enforce_aacr2_guardrails %]checked[% END %]/>
-                                        <span class="hint">Lock AACR2 rules and MARC21 placement with hard guards and warnings.</span>
+                                        <span class="hint">Enforce AACR2 rules strictly.</span>
                                     </li>
                                     <li>
                                         <label for="enable_live_validation">Enable Live Validation:</label>
                                         <input type="checkbox" name="enable_live_validation" id="enable_live_validation" value="1" [% IF settings.enable_live_validation %]checked[% END %]/>
-                                        <span class="hint">Highlight violations in real time as catalogers type.</span>
+                                        <span class="hint">Show rule issues while typing.</span>
                                     </li>
                                     <li>
                                         <label for="block_save_on_error">Block Save on Errors:</label>
                                         <input type="checkbox" name="block_save_on_error" id="block_save_on_error" value="1" [% IF settings.block_save_on_error %]checked[% END %]/>
-                                        <span class="hint">Disable record save when AACR2 guardrail violations remain.</span>
+                                        <span class="hint">Block save when required AACR2 issues remain.</span>
                                     </li>
                                     <li>
                                         <label for="required_fields">Required AACR2 Fields:</label>
-                                        <input type="text" name="required_fields" id="required_fields" value="[% settings.required_fields || '100a,245a,260c,300a,050a' %]" class="form-control"/>
-                                        <span class="hint">Comma-separated MARC subfields to enforce (e.g., 100a,245a,260c,300a,050a).</span>
+                                        <input type="text" name="required_fields" id="required_fields" value="[% settings.required_fields || '0030,0080,040c,942c,100a,245a,260c,300a,050a' %]" class="form-control"/>
+                                        <span class="hint">Comma-separated required subfields (example: 100a,245a).</span>
                                     </li>
                                     <li>
                                         <label for="excluded_tags">Excluded Tags (Optional):</label>
                                         <input type="text" name="excluded_tags" id="excluded_tags" value="[% settings.excluded_tags %]" class="form-control"/>
-                                        <span class="hint">Comma-separated MARC tags/subfields to skip from automation (e.g., 590a,9XX).</span>
+                                        <span class="hint">Comma-separated tags/subfields to skip (example: 590a,9XX).</span>
                                     </li>
                                     <li>
                                         <label for="strict_coverage_mode">Strict Coverage Mode:</label>
                                         <input type="checkbox" name="strict_coverage_mode" id="strict_coverage_mode" value="1" [% IF settings.strict_coverage_mode %]checked[% END %]/>
-                                        <span class="hint">Warn when a field has no AACR2 rule defined.</span>
+                                        <span class="hint">Warn when a field has no matching rule.</span>
                                     </li>
                                     <li>
                                         <label for="enable_local_fields">Enable Local (9XX) Fields:</label>
                                         <input type="checkbox" name="enable_local_fields" id="enable_local_fields" value="1" [% IF settings.enable_local_fields %]checked[% END %]/>
-                                        <span class="hint">Default is excluded. Enable to apply AACR2 rules to local fields.</span>
+                                        <span class="hint">Include local fields in AACR2 checks.</span>
                                     </li>
                                     <li>
                                         <label for="local_fields_allowlist">Local Fields Allowlist:</label>
                                         <input type="text" name="local_fields_allowlist" id="local_fields_allowlist" value="[% settings.local_fields_allowlist %]" class="form-control"/>
-                                        <span class="hint">Comma-separated local tags/subfields to include (e.g., 9XX,952a).</span>
+                                        <span class="hint">Comma-separated local fields to include (example: 9XX,952a).</span>
                                     </li>
                                 </ol>
                             </fieldset>
@@ -494,7 +559,7 @@
                                     <li>
                                         <label for="custom-rules-editor">Custom Rules (JSON):</label>
                                         <textarea name="custom_rules" id="custom-rules-editor">[% settings.custom_rules || '{}' %]</textarea>
-                                        <span class="hint">Custom rules are optional. Use {"rules":[{...}]} when adding rules.</span>
+                                        <span class="hint">Optional custom rules JSON (format: {"rules":[...]})</span>
                                     </li>
                                     <li>
                                         <label>Import/Export Rules:</label>
@@ -507,7 +572,7 @@
                                                 <i class="fa fa-download"></i> Export Rules
                                             </button>
                                         </div>
-                                        <span class="hint">Upload a .json file to import rules or download current rules</span>
+                                        <span class="hint">Import rules from JSON or export current rules.</span>
                                     </li>
                                 </ol>
                             </fieldset>
@@ -520,7 +585,7 @@
                                         Excluded: <strong>[% coverage_summary.excluded %]</strong> ·
                                         Not covered: <strong>[% coverage_summary.not_covered %]</strong>
                                     </p>
-                                    <span class="hint">This report scans active MARC frameworks and compares tag/subfield coverage.</span>
+                                    <span class="hint">Shows rule coverage against active MARC frameworks.</span>
                                     [% FOREACH framework IN coverage_report %]
                                         <details style="margin-top: 10px;">
                                             <summary>
@@ -530,9 +595,9 @@
                                             <table class="coverage-table">
                                                 <thead>
                                                     <tr>
-                                                        <th>Tag</th>
-                                                        <th>Subfield</th>
-                                                        <th>Status</th>
+                                                        <th class="sortable" data-sort="tag">Tag</th>
+                                                        <th class="sortable" data-sort="subfield">Subfield</th>
+                                                        <th class="sortable" data-sort="status">Status</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody>
@@ -558,7 +623,7 @@
                                     <div style="margin-top: 15px;">
                                         <label for="coverage-stubs">Recommended Rule Stubs (JSON):</label>
                                         <textarea id="coverage-stubs" class="form-control" rows="8" readonly>[% coverage_stubs_json %]</textarea>
-                                        <span class="hint">Copy and paste into Custom Rules to extend coverage.</span>
+                                        <span class="hint">Use these stubs to extend custom rules.</span>
                                     </div>
                                 </div>
                             </fieldset>
@@ -570,7 +635,7 @@
                                     <li>
                                         <label for="enable_guide">Enable Interactive AACR2 Guide:</label>
                                         <input type="checkbox" name="enable_guide" id="enable_guide" value="1" [% IF settings.enable_guide %]checked[% END %]/>
-                                        <span class="hint">Enable step-by-step AACR2 guide for training.</span>
+                                        <span class="hint">Enable the step-by-step training guide.</span>
                                     </li>
                                     <li>
                                         <label for="guide_users">Exclude Users from Guide:</label>
@@ -608,12 +673,12 @@
                                                 [% END %]
                                             </tbody>
                                         </table>
-                                        <span class="hint">Select users to exclude from accessing the guide (multiple selections allowed)</span>
+                                        <span class="hint">Selected users are excluded from the guide.</span>
                                     </li>
                                     <li>
                                         <label for="guide_exclusion_list">Manual Exclusion List (Optional):</label>
                                         <textarea name="guide_exclusion_list" id="guide_exclusion_list" class="exclusion-list form-control">[% settings.guide_exclusion_list %]</textarea>
-                                        <span class="hint">Comma-separated usernames to exclude manually (e.g., user1,user2). Matches against loggedinusername class text content.</span>
+                                        <span class="hint">Optional comma-separated usernames to exclude.</span>
                                     </li>
                                 </ol>
                             </fieldset>
@@ -623,7 +688,7 @@
                                     <li>
                                         <label for="internship_mode">Enable Internship Mode:</label>
                                         <input type="checkbox" name="internship_mode" id="internship_mode" value="1" [% IF settings.internship_mode %]checked[% END %]/>
-                                        <span class="hint">Disable auto-punctuation for selected users to support manual learning</span>
+                                        <span class="hint">Turn off auto-punctuation for selected trainees.</span>
                                     </li>
                                     <li>
                                         <label for="internship_users">Select Internship Users:</label>
@@ -661,12 +726,26 @@
                                                 [% END %]
                                             </tbody>
                                         </table>
-                                        <span class="hint">Select users to exclude from auto-punctuation (multiple selections allowed)</span>
+                                        <span class="hint">Selected users will not get auto-punctuation.</span>
                                     </li>
                                     <li>
                                         <label for="internship_exclusion_list">Manual Exclusion List:</label>
                                         <textarea name="internship_exclusion_list" id="internship_exclusion_list" class="exclusion-list form-control">[% settings.internship_exclusion_list %]</textarea>
-                                        <span class="hint">Comma-separated usernames to exclude manually (e.g., user1,user2). Matches against loggedinusername class text content.</span>
+                                        <span class="hint">Optional comma-separated usernames to exclude.</span>
+                                    </li>
+                                    <li>
+                                        <label>Intern Access Controls:</label>
+                                        <div style="display:flex; flex-direction:column; gap:6px; margin-top:4px;">
+                                            <label style="font-weight:normal;"><input type="checkbox" class="internship-access-control" name="intern_allow_assistant_toggle" id="intern_allow_assistant_toggle" value="1" [% IF settings.intern_allow_assistant_toggle %]checked[% END %] [% IF !settings.internship_mode %]disabled[% END %]/> Allow AACR2 Assistant toggle</label>
+                                            <label style="font-weight:normal;"><input type="checkbox" class="internship-access-control" name="intern_allow_autoapply_toggle" id="intern_allow_autoapply_toggle" value="1" [% IF settings.intern_allow_autoapply_toggle %]checked[% END %] [% IF !settings.internship_mode %]disabled[% END %]/> Allow Auto-apply toggle</label>
+                                            <label style="font-weight:normal;"><input type="checkbox" class="internship-access-control" name="intern_allow_cataloging_panel" id="intern_allow_cataloging_panel" value="1" [% IF settings.intern_allow_cataloging_panel %]checked[% END %] [% IF !settings.internship_mode %]disabled[% END %]/> Allow Cataloging Assistant panel toggle</label>
+                                            <label style="font-weight:normal;"><input type="checkbox" class="internship-access-control" name="intern_allow_ai_assist_toggle" id="intern_allow_ai_assist_toggle" value="1" [% IF settings.intern_allow_ai_assist_toggle %]checked[% END %] [% IF !settings.internship_mode %]disabled[% END %]/> Allow AI Assist toggle</label>
+                                            <label style="font-weight:normal;"><input type="checkbox" class="internship-access-control" name="intern_allow_panel_apply_actions" id="intern_allow_panel_apply_actions" value="1" [% IF settings.intern_allow_panel_apply_actions %]checked[% END %] [% IF !settings.internship_mode %]disabled[% END %]/> Allow apply/undo actions in Cataloging Assistant panel</label>
+                                            <label style="font-weight:normal;"><input type="checkbox" class="internship-access-control" name="intern_allow_ai_cataloging" id="intern_allow_ai_cataloging" value="1" [% IF settings.intern_allow_ai_cataloging %]checked[% END %] [% IF !settings.internship_mode %]disabled[% END %]/> Allow AI cataloging requests</label>
+                                            <label style="font-weight:normal;"><input type="checkbox" class="internship-access-control" name="intern_allow_ai_punctuation" id="intern_allow_ai_punctuation" value="1" [% IF settings.intern_allow_ai_punctuation %]checked[% END %] [% IF !settings.internship_mode %]disabled[% END %]/> Allow AI punctuation requests</label>
+                                            <label style="font-weight:normal;"><input type="checkbox" class="internship-access-control" name="intern_allow_ai_apply_actions" id="intern_allow_ai_apply_actions" value="1" [% IF settings.intern_allow_ai_apply_actions %]checked[% END %] [% IF !settings.internship_mode %]disabled[% END %]/> Allow AI panel apply actions (subjects, classification, call number, AI patch apply)</label>
+                                        </div>
+                                        <span class="hint">These controls apply only to users selected in internship mode.</span>
                                     </li>
                                 </ol>
                             </fieldset>
@@ -680,7 +759,6 @@
                                             <option value="completed">Completed</option>
                                             <option value="in_progress">In progress</option>
                                             <option value="not_started">Not started</option>
-                                            <option value="no_data">No data</option>
                                         </select>
                                         <select id="progress-tier-filter" class="form-control input-sm" style="width: 170px;">
                                             <option value="all">All tiers</option>
@@ -722,7 +800,7 @@
                                             </tr>
                                         </tbody>
                                     </table>
-                                    <span class="hint">Progress updates when staff use the AACR2 training guide.</span>
+                                    <span class="hint">Updates as staff use the training guide.</span>
                                 </div>
                             </fieldset>
                         </div>
@@ -733,17 +811,17 @@
                                     <li>
                                         <label for="debug_mode">Debug Mode:</label>
                                         <input type="checkbox" name="debug_mode" id="debug_mode" value="1" [% IF settings.debug_mode %]checked[% END %]/>
-                                        <span class="hint">Enable console logging for troubleshooting (only enable if needed)</span>
+                                        <span class="hint">Enable extra logs for troubleshooting.</span>
                                     </li>
                                     <li>
                                         <label for="ai_debug_include_raw_response">Include Raw AI Provider Debug Payload:</label>
                                         <input type="checkbox" name="ai_debug_include_raw_response" id="ai_debug_include_raw_response" value="1" [% IF settings.ai_debug_include_raw_response %]checked[% END %]/>
-                                        <span class="hint">When enabled, API responses may include sanitized/truncated raw provider text for debugging.</span>
+                                        <span class="hint">Include sanitized raw provider text for debugging.</span>
                                     </li>
                                     <li>
                                         <label for="ai_payload_preview">Enable Payload Preview:</label>
                                         <input type="checkbox" name="ai_payload_preview" id="ai_payload_preview" value="1" [% IF settings.ai_payload_preview %]checked[% END %]/>
-                                        <span class="hint">Lets admins preview what will be sent to the AI.</span>
+                                        <span class="hint">Preview the payload sent to AI.</span>
                                     </li>
                                 </ol>
                             </fieldset>
@@ -753,12 +831,12 @@
                                     <li>
                                         <label for="ai_redaction_rules">Redaction Rules:</label>
                                         <input type="text" name="ai_redaction_rules" id="ai_redaction_rules" value="[% settings.ai_redaction_rules %]" class="form-control"/>
-                                        <span class="hint">Tags/subfields to hide before sending to AI (e.g., 9XX,952,5XX).</span>
+                                        <span class="hint">Hide these tags/subfields before AI requests.</span>
                                     </li>
                                     <li>
                                         <label for="ai_redact_856_querystrings">Redact 856 $u Querystrings:</label>
                                         <input type="checkbox" name="ai_redact_856_querystrings" id="ai_redact_856_querystrings" value="1" [% IF settings.ai_redact_856_querystrings %]checked[% END %]/>
-                                        <span class="hint">Hide URLs with query strings to avoid leaking sensitive links.</span>
+                                        <span class="hint">Strip query strings from 856$u links.</span>
                                     </li>
                                     <li>
                                         <label for="ai_context_mode">AI Context Scope:</label>
@@ -767,7 +845,7 @@
                                             <option value="tag_plus_neighbors" [% IF settings.ai_context_mode == 'tag_plus_neighbors' %]selected[% END %]>Tag + neighboring fields</option>
                                             <option value="full" [% IF settings.ai_context_mode == 'full' %]selected[% END %]>Full record (redacted)</option>
                                         </select>
-                                        <span class="hint">How much of the record is shared with AI. Tag only is safest.</span>
+                                        <span class="hint">Choose how much record context is sent to AI.</span>
                                     </li>
                                 </ol>
                             </fieldset>
@@ -783,72 +861,72 @@
                                             <option value="medium" [% IF reasoning_effort == 'medium' %]selected[% END %]>Medium</option>
                                             <option value="high" [% IF reasoning_effort == 'high' %]selected[% END %]>High</option>
                                         </select>
-                                        <span class="hint">Applies only to OpenAI reasoning-capable models (e.g., o-series). Higher effort can increase latency and cost.</span>
+                                        <span class="hint">For reasoning models only. Higher effort can be slower/costlier.</span>
                                     </li>
                                     <li>
                                         <label for="ai_timeout">Timeout (seconds):</label>
                                         <input type="number" name="ai_timeout" id="ai_timeout" value="[% settings.ai_timeout %]" class="form-control" style="width: 120px;"/>
-                                        <span class="hint">How long to wait for the AI before giving up.</span>
+                                        <span class="hint">Request timeout in seconds.</span>
                                     </li>
                                     <li>
                                         <label for="ai_max_output_tokens">Max Output Tokens:</label>
                                         <input type="number" name="ai_max_output_tokens" id="ai_max_output_tokens" value="[% settings.ai_max_output_tokens || settings.ai_max_tokens || 4096 %]" class="form-control" style="width: 120px;"/>
-                                        <span class="hint">Higher limits can improve completeness but increase cost/latency. If output is truncated, raise this or reduce reasoning effort.</span>
+                                        <span class="hint">Max output tokens per response.</span>
                                     </li>
                                     <li>
                                         <label for="ai_temperature">Temperature:</label>
                                         <input type="text" name="ai_temperature" id="ai_temperature" value="[% settings.ai_temperature %]" class="form-control" style="width: 120px;"/>
-                                        <span class="hint">Lower = more consistent; higher = more creative.</span>
+                                        <span class="hint">Lower is steadier; higher is more varied.</span>
                                     </li>
                                     <li>
                                         <label for="ai_confidence_threshold">Ghost Confidence Threshold:</label>
                                         <input type="text" name="ai_confidence_threshold" id="ai_confidence_threshold" value="[% settings.ai_confidence_threshold %]" class="form-control" style="width: 120px;"/>
-                                        <span class="hint">Only show AI ghost text when confidence is this high.</span>
+                                        <span class="hint">Show ghost text only above this confidence.</span>
                                     </li>
                                     <li>
                                         <label for="ai_rate_limit_per_minute">Rate Limit (per minute):</label>
                                         <input type="number" name="ai_rate_limit_per_minute" id="ai_rate_limit_per_minute" value="[% settings.ai_rate_limit_per_minute %]" class="form-control" style="width: 120px;"/>
-                                        <span class="hint">Max AI requests per minute per staff user.</span>
+                                        <span class="hint">Per-user AI request limit per minute.</span>
                                     </li>
                                     <li>
                                         <label for="ai_cache_ttl_seconds">Cache TTL (seconds):</label>
                                         <input type="number" name="ai_cache_ttl_seconds" id="ai_cache_ttl_seconds" value="[% settings.ai_cache_ttl_seconds %]" class="form-control" style="width: 120px;"/>
-                                        <span class="hint">Reuse AI answers for this many seconds to reduce costs.</span>
+                                        <span class="hint">Cache AI responses for this many seconds.</span>
                                     </li>
                                     <li>
                                         <label for="ai_cache_max_entries">Cache Max Entries:</label>
                                         <input type="number" name="ai_cache_max_entries" id="ai_cache_max_entries" value="[% settings.ai_cache_max_entries %]" class="form-control" style="width: 120px;"/>
-                                        <span class="hint">Upper limit for cached AI responses.</span>
+                                        <span class="hint">Maximum number of cached AI responses.</span>
                                     </li>
                                     <li>
                                         <label for="ai_retry_count">Retries:</label>
                                         <input type="number" name="ai_retry_count" id="ai_retry_count" value="[% settings.ai_retry_count %]" class="form-control" style="width: 120px;"/>
-                                        <span class="hint">How many times to retry when the AI fails.</span>
+                                        <span class="hint">Retry count after failed AI requests.</span>
                                     </li>
                                     <li>
                                         <label for="ai_circuit_breaker_threshold">Circuit Breaker Threshold:</label>
                                         <input type="number" name="ai_circuit_breaker_threshold" id="ai_circuit_breaker_threshold" value="[% settings.ai_circuit_breaker_threshold %]" class="form-control" style="width: 120px;"/>
-                                        <span class="hint">Pause AI after this many consecutive failures.</span>
+                                        <span class="hint">Open circuit after this many consecutive failures.</span>
                                     </li>
                                     <li>
                                         <label for="ai_circuit_breaker_timeout">Circuit Breaker Timeout (seconds):</label>
                                         <input type="number" name="ai_circuit_breaker_timeout" id="ai_circuit_breaker_timeout" value="[% settings.ai_circuit_breaker_timeout %]" class="form-control" style="width: 120px;"/>
-                                        <span class="hint">How long to pause AI after failures.</span>
+                                        <span class="hint">Circuit open duration in seconds.</span>
                                     </li>
                                     <li>
                                         <label for="ai_circuit_breaker_window_seconds">Circuit Breaker Window (seconds):</label>
                                         <input type="number" name="ai_circuit_breaker_window_seconds" id="ai_circuit_breaker_window_seconds" value="[% settings.ai_circuit_breaker_window_seconds %]" class="form-control" style="width: 120px;"/>
-                                        <span class="hint">Time window for counting failures.</span>
+                                        <span class="hint">Failure-rate window in seconds.</span>
                                     </li>
                                     <li>
                                         <label for="ai_circuit_breaker_failure_rate">Circuit Breaker Failure Rate:</label>
                                         <input type="text" name="ai_circuit_breaker_failure_rate" id="ai_circuit_breaker_failure_rate" value="[% settings.ai_circuit_breaker_failure_rate %]" class="form-control" style="width: 120px;"/>
-                                        <span class="hint">Pause AI if failure rate exceeds this fraction (e.g., 0.5 = 50%).</span>
+                                        <span class="hint">Open circuit if failure rate exceeds this value (0-1).</span>
                                     </li>
                                     <li>
                                         <label for="ai_circuit_breaker_min_samples">Circuit Breaker Min Samples:</label>
                                         <input type="number" name="ai_circuit_breaker_min_samples" id="ai_circuit_breaker_min_samples" value="[% settings.ai_circuit_breaker_min_samples %]" class="form-control" style="width: 120px;"/>
-                                        <span class="hint">Minimum requests before failure rate can trigger.</span>
+                                        <span class="hint">Minimum sample size before failure-rate checks apply.</span>
                                     </li>
                                 </ol>
                             </fieldset>
@@ -1028,6 +1106,9 @@
         $('#selectAllInternshipUsers')
             .prop('disabled', !isInternshipEnabled)
             .toggleClass('disabled-checkbox', !isInternshipEnabled);
+        $('.internship-access-control')
+            .prop('disabled', !isInternshipEnabled)
+            .toggleClass('disabled-checkbox', !isInternshipEnabled);
 
         if (!isGuideEnabled) {
             $('input[name="guide_users"]').prop('checked', false);
@@ -1059,14 +1140,59 @@
     function sortTableRows(tableSelector, columnIndex, asc) {
         var $tbody = $(tableSelector).find('tbody');
         var rows = $tbody.find('tr').get();
+        var cellComparable = function($cell) {
+            if (!$cell || !$cell.length) return { type: 'text', value: '' };
+            var sortValue = $cell.attr('data-sort-value');
+            if (sortValue !== undefined) {
+                var parsedSort = Number(sortValue);
+                if (isFinite(parsedSort)) return { type: 'number', value: parsedSort };
+                return { type: 'text', value: normalizeText(sortValue) };
+            }
+            var text = ($cell.text() || '').trim();
+            var numericText = text.match(/^(-?\d+(?:\.\d+)?)(?:%|\b)/);
+            if (numericText) {
+                var parsed = Number(numericText[1]);
+                if (isFinite(parsed)) return { type: 'number', value: parsed };
+            }
+            return { type: 'text', value: normalizeText(text) };
+        };
         rows.sort(function(a, b) {
-            var textA = normalizeText($(a).children('td').eq(columnIndex).text());
-            var textB = normalizeText($(b).children('td').eq(columnIndex).text());
-            if (textA < textB) return asc ? -1 : 1;
-            if (textA > textB) return asc ? 1 : -1;
+            var valueA = cellComparable($(a).children('td').eq(columnIndex));
+            var valueB = cellComparable($(b).children('td').eq(columnIndex));
+            if (valueA.type === 'number' && valueB.type === 'number') {
+                if (valueA.value < valueB.value) return asc ? -1 : 1;
+                if (valueA.value > valueB.value) return asc ? 1 : -1;
+                return 0;
+            }
+            if (valueA.value < valueB.value) return asc ? -1 : 1;
+            if (valueA.value > valueB.value) return asc ? 1 : -1;
             return 0;
         });
         $.each(rows, function(index, row) { $tbody.append(row); });
+    }
+
+    function sortableColumnIndex(tableSelector, sortField) {
+        var wanted = normalizeText(sortField || '');
+        if (!wanted) return -1;
+        var index = -1;
+        $(tableSelector).find('th.sortable').each(function() {
+            if (normalizeText($(this).attr('data-sort') || '') === wanted) {
+                index = $(this).index();
+                return false;
+            }
+            return true;
+        });
+        return index;
+    }
+
+    function sortTableByField(tableSelector, sortField, direction) {
+        var index = sortableColumnIndex(tableSelector, sortField);
+        if (index < 0) return;
+        var asc = normalizeText(direction) !== 'desc';
+        sortTableRows(tableSelector, index, asc);
+        var $table = $(tableSelector);
+        $table.find('th.sortable').removeClass('sort-asc sort-desc');
+        $table.find('thead th').eq(index).addClass(asc ? 'sort-asc' : 'sort-desc');
     }
 
     function setupSortableTable(tableSelector) {
@@ -1074,10 +1200,13 @@
         if ($table.data('aacr2SortBound')) return;
         $table.data('aacr2SortBound', 1);
         var sortState = {};
-        $table.find('th.sortable').each(function(index) {
+        $table.find('th.sortable').each(function() {
+            var columnIndex = $(this).index();
             $(this).on('click', function() {
-                sortState[index] = !sortState[index];
-                sortTableRows(tableSelector, index, sortState[index]);
+                sortState[columnIndex] = !sortState[columnIndex];
+                sortTableRows(tableSelector, columnIndex, sortState[columnIndex]);
+                $table.find('th.sortable').removeClass('sort-asc sort-desc');
+                $(this).addClass(sortState[columnIndex] ? 'sort-asc' : 'sort-desc');
             });
         });
     }
@@ -1086,7 +1215,7 @@
         total = Number(total || 0);
         done = Number(done || 0);
         if (!total && !done) {
-            return updatedAt ? 'not_started' : 'no_data';
+            return 'not_started';
         }
         if (!total) return 'in_progress';
         if (!done) return 'not_started';
@@ -1127,29 +1256,29 @@
         return nextModule || '';
     }
 
-    function fallbackCurrentTier(summary) {
+    function completionTierFromPercent(percent) {
+        var value = Number(percent);
+        if (!isFinite(value)) value = 0;
+        value = Math.round(value);
+        if (value < 0) value = 0;
+        if (value > 100) value = 100;
+        if (value <= 33) return 'Tier 1';
+        if (value <= 66) return 'Tier 2';
+        return 'Tier 3';
+    }
+
+    function fallbackCurrentTier(summary, summaryCounts) {
         summary = summary || {};
-        var tiers = summary.tier_breakdown || {};
-        var names = Object.keys(tiers);
-        if (!names.length) return '';
-        names.sort(function(a, b) {
-            var na = parseInt((a.match(/\d+/) || [999])[0], 10);
-            var nb = parseInt((b.match(/\d+/) || [999])[0], 10);
-            if (na !== nb) return na - nb;
-            return a.localeCompare(b);
-        });
-        var nextTier = names[0] || '';
-        names.some(function(name) {
-            var entry = tiers[name] || {};
-            var done = Number(entry.completed || 0) + Number(entry.skipped || 0);
-            var total = Number(entry.total || 0);
-            if (total > 0 && done < total) {
-                nextTier = name;
-                return true;
+        var completion = Number(summary.completion_percent);
+        if (!isFinite(completion)) {
+            var counts = overallCountsFromSummary(summary, summaryCounts || summary);
+            if (counts.total > 0) {
+                completion = Math.round(((counts.completed + counts.skipped) / counts.total) * 100);
+            } else {
+                completion = 0;
             }
-            return false;
-        });
-        return nextTier || '';
+        }
+        return completionTierFromPercent(completion);
     }
 
     function summarizeProgressRow(done, total, percentOverride) {
@@ -1307,7 +1436,7 @@
             var summaryCounts = row.summary_counts || row.summary || {};
             var summary = row.summary || {};
             var moduleSummary = summary.current_module || fallbackCurrentModule(summary) || 'n/a';
-            var tierSummary = summary.current_tier || fallbackCurrentTier(summary) || 'n/a';
+            var tierSummary = fallbackCurrentTier(summary, summaryCounts) || 'Tier 1';
             var moduleCounts = moduleCountsFromSummary(summary, summaryCounts, moduleSummary);
             var overallCounts = overallCountsFromSummary(summary, summaryCounts);
             var overallDone = overallCounts.completed + overallCounts.skipped;
@@ -1317,6 +1446,8 @@
             }
             var status = progressStatusFromCounts(overallCounts.total, overallDone, row.updated_at);
             var summaryText = summarizeProgressRow(overallDone, overallCounts.total, completionPercent);
+            var completionSort = Number(completionPercent);
+            if (!isFinite(completionSort)) completionSort = 0;
             filterRows.push({
                 module: moduleSummary,
                 tier: tierSummary
@@ -1329,12 +1460,12 @@
                 .append('<td>' + escapeHtml(row.name || '') + '</td>')
                 .append('<td>' + escapeHtml(tierSummary) + '</td>')
                 .append('<td>' + escapeHtml(moduleSummary) + '</td>')
-                .append('<td>' + moduleCounts.completed + '</td>')
-                .append('<td>' + moduleCounts.skipped + '</td>')
-                .append('<td>' + overallCounts.completed + '</td>')
-                .append('<td>' + overallCounts.skipped + '</td>')
-                .append('<td>' + escapeHtml(summaryText) + '</td>')
-                .append('<td>' + formatTimestamp(row.updated_at) + '</td>');
+                .append('<td data-sort-value="' + moduleCounts.completed + '">' + moduleCounts.completed + '</td>')
+                .append('<td data-sort-value="' + moduleCounts.skipped + '">' + moduleCounts.skipped + '</td>')
+                .append('<td data-sort-value="' + overallCounts.completed + '">' + overallCounts.completed + '</td>')
+                .append('<td data-sort-value="' + overallCounts.skipped + '">' + overallCounts.skipped + '</td>')
+                .append('<td data-sort-value="' + completionSort + '">' + escapeHtml(summaryText) + '</td>')
+                .append('<td data-sort-value="' + Number(row.updated_at || 0) + '">' + formatTimestamp(row.updated_at) + '</td>');
             $tbody.append($tr);
         });
         updateProgressFilterOptions(filterRows);
@@ -1356,6 +1487,26 @@
             var matchesModule = module === 'all' || module === rowModule;
             $(this).toggle(matchesQuery && matchesStatus && matchesTier && matchesModule);
         });
+    }
+
+    function currentTableSortState(tableSelector, fallbackField, fallbackDirection) {
+        var field = fallbackField || 'updated_at';
+        var direction = fallbackDirection || 'desc';
+        $(tableSelector).find('th.sortable').each(function() {
+            var $th = $(this);
+            if ($th.hasClass('sort-asc') || $th.hasClass('sort-desc')) {
+                field = ($th.attr('data-sort') || field);
+                direction = $th.hasClass('sort-asc') ? 'asc' : 'desc';
+                return false;
+            }
+            return true;
+        });
+        return { field: field, direction: direction };
+    }
+
+    function applyProgressSort() {
+        var state = currentTableSortState('#aacr2-progress-table', 'updated_at', 'desc');
+        sortTableByField('#aacr2-progress-table', state.field, state.direction);
     }
 
     function getVisibleProgressRowsForExport() {
@@ -1894,8 +2045,9 @@
             .then(function(data) {
                 if (isConfigurePageUnloading || isConfigurationSubmitInProgress) return;
                 renderProgressTable((data && data.users) || []);
-                applyProgressFilters();
                 setupSortableTable('#aacr2-progress-table');
+                applyProgressSort();
+                applyProgressFilters();
             })
             .catch(function(err) {
                 if (shouldIgnoreProgressLoadError(err)) return;
@@ -1957,7 +2109,9 @@
             });
             $('#llm_api_provider').select2({
                 minimumResultsForSearch: Infinity,
-                width: 'style'
+                width: 'style',
+                dropdownAutoWidth: true,
+                dropdownParent: $('#llm_api_provider').closest('li')
             });
             $('#ai_model').select2({
                 placeholder: 'Select a model',
@@ -1986,6 +2140,14 @@
         function applyInternshipUserFilters() {
             filterUserTableRows('#internship-user-search', '#internship-user-filter', '#internship-users-table');
         }
+        function applyGuideUserSort() {
+            sortTableByField('#guide-users-table', 'userid', 'asc');
+            applyGuideUserFilters();
+        }
+        function applyInternshipUserSort() {
+            sortTableByField('#internship-users-table', 'userid', 'asc');
+            applyInternshipUserFilters();
+        }
         $('#guide-user-search').on('input', applyGuideUserFilters);
         $('#guide-user-filter').on('change', applyGuideUserFilters);
         $('#guide-users-table').on('change', 'input[type="checkbox"]', applyGuideUserFilters);
@@ -1994,6 +2156,11 @@
         $('#internship-users-table').on('change', 'input[type="checkbox"]', applyInternshipUserFilters);
         setupSortableTable('#guide-users-table');
         setupSortableTable('#internship-users-table');
+        $('.coverage-table').each(function() {
+            setupSortableTable(this);
+        });
+        applyGuideUserSort();
+        applyInternshipUserSort();
 
         // Check if settings were saved successfully
         [% IF saved_successfully %]
@@ -2042,189 +2209,119 @@
         if (modelSelections.openai === 'default') {
             modelSelections.openai = '';
         }
-        function normalizedRequestMode() {
-            var mode = ($('#ai_request_mode').val() || 'server').toLowerCase();
-            return mode === 'direct' || mode === 'browser' ? 'direct' : 'server';
-        }
-
-        function strictJsonEnabled() {
-            return $('#ai_strict_json_mode').is(':checked');
-        }
-
-        function activePromptDefaults() {
-            if (strictJsonEnabled()) {
-                if (promptDefaults && promptDefaults.strict_json) return promptDefaults.strict_json;
-                return (promptDefaults && promptDefaults.active) ? promptDefaults.active : {};
-            }
+        function promptDefaultsForMode() {
             if (promptDefaults && promptDefaults.plain) return promptDefaults.plain;
             if (promptDefaults && promptDefaults.default) return promptDefaults;
             return (promptDefaults && promptDefaults.active) ? promptDefaults.active : {};
         }
 
+        function activePromptDefaults() {
+            return promptDefaultsForMode();
+        }
+
+        function normalizePromptText(value) {
+            return (value || '').toString().replace(/\r\n/g, '\n').trim();
+        }
+
+        function dedupePromptText(value) {
+            var raw = (value || '').toString().replace(/\r\n/g, '\n');
+            var lines = raw.split('\n');
+            var out = [];
+            var previous = '';
+            var seenSingletons = {};
+            var singletonLines = {
+                'payload_json:': true,
+                '{{payload_json}}': true,
+                '{{source_text}}': true,
+                'payload json:': true,
+                'source text:': true
+            };
+            lines.forEach(function(line) {
+                var cleaned = (line || '').replace(/\s+$/g, '');
+                var key = cleaned.trim();
+                var lowerKey = key.toLowerCase();
+                if (!key) {
+                    if (previous === '') return;
+                    out.push('');
+                    previous = '';
+                    return;
+                }
+                if (singletonLines[lowerKey]) {
+                    if (seenSingletons[lowerKey]) return;
+                    seenSingletons[lowerKey] = true;
+                }
+                if (key === previous) return;
+                out.push(cleaned);
+                previous = key;
+            });
+            return out.join('\n').trim();
+        }
+
+        function canonicalPromptText(value) {
+            return dedupePromptText(value).split('\n').map(function(line) {
+                return (line || '').trim();
+            }).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+        }
+
+        function allDefaultsForPromptKey(defaultKey) {
+            var values = [];
+            function addFrom(source) {
+                if (!source || typeof source !== 'object') return;
+                if (source[defaultKey]) values.push(source[defaultKey]);
+            }
+            addFrom(promptDefaults && promptDefaults.plain);
+            addFrom(promptDefaults && promptDefaults.active);
+            addFrom(promptDefaults);
+            return values;
+        }
+
+        function isKnownDefaultPrompt(value, defaultKey) {
+            var canonical = canonicalPromptText(value);
+            if (!canonical) return false;
+            var defaults = allDefaultsForPromptKey(defaultKey);
+            return defaults.some(function(item) {
+                return canonicalPromptText(item) === canonical;
+            });
+        }
+
+        function syncPromptValueForMode($field, defaultKey, currentDefault) {
+            if (!$field || !$field.length) return;
+            var currentValue = dedupePromptText($field.val());
+            if (currentValue !== ($field.val() || '')) {
+                $field.val(currentValue);
+            }
+            var currentNorm = canonicalPromptText(currentDefault);
+            var currentCanonical = canonicalPromptText(currentValue);
+            if (!currentCanonical
+                || currentCanonical === currentNorm
+                || isKnownDefaultPrompt(currentValue, defaultKey)) {
+                $field.val(dedupePromptText(currentDefault || ''));
+            }
+        }
+
         function promptPlaceholderText(value) {
-            var raw = (value || '').toString().trim();
-            if (!raw) return '';
-            var singleLine = raw.replace(/\s+/g, ' ').trim();
-            if (singleLine.length <= 240) return singleLine;
-            return singleLine.slice(0, 237) + '...';
+            var raw = normalizePromptText(value);
+            return raw;
         }
 
         function updatePromptPlaceholders() {
-            var defaults = activePromptDefaults();
+            var defaults = promptDefaultsForMode();
             var defaultPrompt = (defaults && defaults.default) ? defaults.default : '';
             var catalogingPrompt = (defaults && defaults.cataloging) ? defaults.cataloging : '';
+            syncPromptValueForMode($('#ai_prompt_default'), 'default', defaultPrompt);
+            syncPromptValueForMode($('#ai_prompt_cataloging'), 'cataloging', catalogingPrompt);
             $('#ai_prompt_default').attr('placeholder', promptPlaceholderText(defaultPrompt));
             $('#ai_prompt_cataloging').attr('placeholder', promptPlaceholderText(catalogingPrompt));
-        }
-
-        function isDirectBrowserMode() {
-            return normalizedRequestMode() === 'direct';
+            $('#ai_prompt_default_hint').text(
+                'Punctuation prompt. Max [% ai_prompt_max_length || 16384 %] chars.'
+            );
+            $('#ai_prompt_cataloging_hint').text(
+                'Cataloging prompt. Leave blank to use built-in default.'
+            );
         }
 
         function providerLabel(provider) {
             return (provider || '').toLowerCase() === 'openrouter' ? 'OpenRouter' : 'OpenAI';
-        }
-
-        function updateRequestModeHint() {
-            var message = isDirectBrowserMode()
-                ? 'Direct browser mode sends AI requests from the browser and uses an obfuscated browser-local key only.'
-                : 'Server mode sends AI requests through Koha and uses server-stored provider keys only.';
-            if (strictJsonEnabled()) {
-                message += ' Structured JSON mode is enabled.';
-            }
-            $('#ai-request-mode-hint').text(message);
-        }
-
-        function browserKeyStorageKeys(provider) {
-            var normalized = (provider || 'openrouter').toLowerCase();
-            if (normalized === 'openai') {
-                return ['aacr2.openai.api_key.obf', 'aacr2.openai.api_key', 'aacr2_openai_api_key'];
-            }
-            return ['aacr2.openrouter.api_key.obf', 'aacr2.openrouter.api_key', 'aacr2_openrouter_api_key'];
-        }
-
-        function obfuscateBrowserKey(value) {
-            var raw = (value || '').toString();
-            if (!raw) return '';
-            var mask = 73;
-            var transformed = '';
-            for (var i = 0; i < raw.length; i++) {
-                transformed += String.fromCharCode(raw.charCodeAt(i) ^ mask);
-            }
-            try {
-                return btoa(transformed);
-            } catch (err) {
-                return '';
-            }
-        }
-
-        function deobfuscateBrowserKey(value) {
-            var raw = (value || '').toString().trim();
-            if (!raw) return '';
-            var decoded = '';
-            try {
-                decoded = atob(raw);
-            } catch (err) {
-                return raw;
-            }
-            var mask = 73;
-            var transformed = '';
-            for (var i = 0; i < decoded.length; i++) {
-                transformed += String.fromCharCode(decoded.charCodeAt(i) ^ mask);
-            }
-            return transformed;
-        }
-
-        function browserKeyFingerprint(value) {
-            var raw = (value || '').toString();
-            if (!raw) return '';
-            var hash = 5381;
-            for (var i = 0; i < raw.length; i++) {
-                hash = ((hash << 5) + hash) + raw.charCodeAt(i);
-                hash &= 0xffffffff;
-            }
-            var hex = (hash >>> 0).toString(16);
-            while (hex.length < 8) hex = '0' + hex;
-            return 'k' + raw.length + '-' + hex;
-        }
-
-        function readStoredBrowserKey(provider) {
-            var keys = browserKeyStorageKeys(provider);
-            var stores = [window.sessionStorage, window.localStorage];
-            for (var i = 0; i < stores.length; i++) {
-                var store = stores[i];
-                if (!store) continue;
-                for (var j = 0; j < keys.length; j++) {
-                    var key = keys[j];
-                    try {
-                        var value = store.getItem(key);
-                        if (!value) continue;
-                        if (key.indexOf('.obf') !== -1) {
-                            var decoded = deobfuscateBrowserKey(value);
-                            if (decoded) return decoded;
-                        } else if (String(value).trim()) {
-                            return String(value).trim();
-                        }
-                    } catch (err) {
-                        // ignore storage read errors
-                    }
-                }
-            }
-            return '';
-        }
-
-        function storeBrowserKey(provider, keyValue) {
-            var normalized = (provider || 'openrouter').toLowerCase();
-            var obfuscated = obfuscateBrowserKey(keyValue);
-            var keyName = browserKeyStorageKeys(normalized)[0];
-            if (!obfuscated || !keyName) return false;
-            var stored = false;
-            try {
-                if (window.localStorage) {
-                    window.localStorage.setItem(keyName, obfuscated);
-                    stored = true;
-                }
-            } catch (err) {
-                stored = false;
-            }
-            if (!stored) {
-                try {
-                    if (window.sessionStorage) {
-                        window.sessionStorage.setItem(keyName, obfuscated);
-                        stored = true;
-                    }
-                } catch (err2) {
-                    stored = false;
-                }
-            }
-            if (stored) {
-                try {
-                    if (window.localStorage && window.sessionStorage) {
-                        if (window.localStorage.getItem(keyName)) {
-                            window.sessionStorage.removeItem(keyName);
-                        } else {
-                            window.localStorage.removeItem(keyName);
-                        }
-                    }
-                } catch (err3) {
-                    // ignore cleanup errors
-                }
-            }
-            return stored;
-        }
-
-        function clearBrowserKey(provider) {
-            var keys = browserKeyStorageKeys(provider);
-            [window.localStorage, window.sessionStorage].forEach(function(store) {
-                if (!store) return;
-                keys.forEach(function(key) {
-                    try {
-                        store.removeItem(key);
-                    } catch (err) {
-                        // ignore storage clear errors
-                    }
-                });
-            });
         }
 
         function providerHasSavedKey(provider) {
@@ -2236,9 +2333,7 @@
         }
 
         function providerHasConfiguredKey(provider) {
-            return isDirectBrowserMode()
-                ? !!readStoredBrowserKey(provider)
-                : providerHasSavedKey(provider);
+            return providerHasSavedKey(provider);
         }
 
         function notifyProviderWarning(provider, warning) {
@@ -2253,48 +2348,7 @@
             var normalized = (provider || 'openrouter').toLowerCase();
             if (providerHasConfiguredKey(normalized) || missingKeyToasts[normalized]) return;
             missingKeyToasts[normalized] = true;
-            var scope = isDirectBrowserMode() ? 'in this browser' : 'on server';
-            toastr.warning(providerLabel(normalized) + ' API key is not configured ' + scope + '.');
-        }
-
-        function normalizeDirectModels(provider, payload) {
-            var normalized = (provider || 'openrouter').toLowerCase();
-            var list = (payload && payload.data && Array.isArray(payload.data)) ? payload.data : [];
-            if (normalized === 'openai') {
-                return list
-                    .filter(function(item) { return item && item.id; })
-                    .map(function(item) {
-                        return {
-                            id: item.id,
-                            name: item.id,
-                            owned_by: item.owned_by || ''
-                        };
-                    })
-                    .sort(function(a, b) { return (a.id || '').localeCompare(b.id || ''); });
-            }
-            return list
-                .map(function(model) {
-                    if (!model) return null;
-                    var id = model.id || model.canonical_slug || '';
-                    if (!id) return null;
-                    var architecture = (model.architecture && typeof model.architecture === 'object') ? model.architecture : {};
-                    var inputModalities = model.input_modalities || architecture.input_modalities || [];
-                    var outputModalities = model.output_modalities || architecture.output_modalities || [];
-                    if (!Array.isArray(inputModalities)) inputModalities = [inputModalities];
-                    if (!Array.isArray(outputModalities)) outputModalities = [outputModalities];
-                    return {
-                        id: id,
-                        name: model.name || id,
-                        description: model.description || '',
-                        context_length: model.context_length || 0,
-                        pricing: model.pricing || {},
-                        modalities: model.modalities || model.modality || architecture.modality || [],
-                        input_modalities: inputModalities,
-                        output_modalities: outputModalities
-                    };
-                })
-                .filter(function(item) { return !!item; })
-                .sort(function(a, b) { return (a.id || '').localeCompare(b.id || ''); });
+            toastr.warning(providerLabel(normalized) + ' API key is not configured on server.');
         }
 
         function fetchOpenRouterModelsViaServer(force) {
@@ -2325,70 +2379,13 @@
                         provider: 'openrouter',
                         key_present: 0,
                         models: [],
-                        warning: 'OpenRouter model lookup via server failed (' + message + '). Enter model ID manually or switch request mode.'
-                    };
-                });
-        }
-
-        function fetchModelsDirect(provider, force) {
-            var normalized = (provider || 'openrouter').toLowerCase();
-            var apiKey = readStoredBrowserKey(normalized);
-            if (!apiKey && normalized !== 'openrouter') {
-                return Promise.resolve({
-                    ok: 0,
-                    provider: normalized,
-                    key_present: 0,
-                    models: [],
-                    warning: providerLabel(normalized) + ' API key is not configured in this browser.'
-                });
-            }
-            if (normalized === 'openrouter') {
-                return fetchOpenRouterModelsViaServer(force);
-            }
-            var url = normalized === 'openai'
-                ? 'https://api.openai.com/v1/models'
-                : 'https://openrouter.ai/api/v1/models';
-            var headers = {
-                'Authorization': 'Bearer ' + apiKey,
-                'Accept': 'application/json'
-            };
-            return fetch(url, { method: 'GET', headers: headers })
-                .then(function(response) {
-                    if (!response.ok) {
-                        return response.text().then(function(text) {
-                            var message = sanitizeServerMessage(text) || 'Request failed.';
-                            throw new Error(buildHttpError(response.status, message));
-                        });
-                    }
-                    return response.json();
-                })
-                .then(function(payload) {
-                    return {
-                        ok: 1,
-                        provider: normalized,
-                        key_present: 1,
-                        cached: 0,
-                        models: normalizeDirectModels(normalized, payload),
-                        warning: ''
-                    };
-                })
-                .catch(function(err) {
-                    var message = (err && err.message) ? err.message : 'Network request failed.';
-                    return {
-                        ok: 0,
-                        provider: normalized,
-                        key_present: 1,
-                        models: [],
-                        warning: providerLabel(normalized) + ' browser-direct model lookup failed (' + message + '). Use server mode to fetch models automatically.'
+                        warning: 'OpenRouter model lookup via server failed (' + message + '). Enter model ID manually.'
                     };
                 });
         }
 
         function fetchModels(provider, force) {
             var normalized = (provider || 'openrouter').toLowerCase();
-            if (isDirectBrowserMode()) {
-                return fetchModelsDirect(normalized, force);
-            }
             if (!providerHasSavedKey(normalized)) {
                 if (normalized === 'openrouter') {
                     return fetchOpenRouterModelsViaServer(force);
@@ -2588,13 +2585,10 @@
 
         function updateModelHint(provider) {
             var normalized = (provider || 'openai').toLowerCase();
-            var modeText = isDirectBrowserMode()
-                ? 'Direct browser mode: model list is fetched from provider API using browser key.'
-                : 'Server mode: model list is fetched through Koha using saved server key.';
             var text = normalized === 'openrouter'
-                ? 'Use model search and filters to find OpenRouter models (text/image/input/output/free).'
-                : 'Use model search to find OpenAI model IDs.';
-            text += ' ' + modeText;
+                ? 'Use search and filters to pick an OpenRouter model.'
+                : 'Use search to pick an OpenAI model ID.';
+            text += ' Server mode: model list loads through Koha.';
             var warning = modelWarnings[normalized] || '';
             if (warning) text += ' ' + warning;
             $('#ai-model-hint').text(text);
@@ -2606,36 +2600,22 @@
             var openaiSet = Number($row.data('openai-set')) === 1;
             var openrouterSet = Number($row.data('openrouter-set')) === 1;
             var isOpenRouter = normalized === 'openrouter';
-            var directMode = isDirectBrowserMode();
             var label = isOpenRouter ? 'OpenRouter API Key:' : 'OpenAI API Key:';
-            var hint = '';
-            var isSet = directMode
-                ? !!readStoredBrowserKey(normalized)
-                : (isOpenRouter ? openrouterSet : openaiSet);
-            if (directMode) {
-                var browserKey = readStoredBrowserKey(normalized);
-                hint = isOpenRouter
-                    ? 'OpenRouter API key for direct browser mode (stored obfuscated in this browser only and sent directly to OpenRouter).'
-                    : 'OpenAI API key for direct browser mode (stored obfuscated in this browser only and sent directly to OpenAI).';
-                if (browserKey) {
-                    hint += ' Fingerprint: ' + browserKeyFingerprint(browserKey) + '.';
-                }
-            } else {
-                hint = isOpenRouter
-                    ? 'OpenRouter API key (stored server-side only in Koha).'
-                    : 'OpenAI API key (stored server-side only in Koha).';
-            }
+            var hint = isOpenRouter
+                ? 'Stored in Koha on the server.'
+                : 'Stored in Koha on the server.';
+            var isSet = isOpenRouter ? openrouterSet : openaiSet;
             if (isSet) hint += ' (set)';
             $('#ai-api-key-label').text(label);
             $('#ai-api-key-hint').text(hint);
             $('#clear-ai-key').prop('disabled', !isSet);
             var $indicator = $('#ai-api-key-indicator');
             if (isSet) {
-                $indicator.text(directMode ? 'Browser' : 'Saved').removeClass('is-empty').addClass('is-set').show();
+                $indicator.text('Saved').removeClass('is-empty').addClass('is-set').show();
             } else {
                 $indicator.text('Not set').removeClass('is-set').addClass('is-empty').show();
             }
-            $('#ai_api_key').attr('placeholder', directMode ? 'Stored locally in browser for direct mode' : 'Stored server-side on save');
+            $('#ai_api_key').attr('placeholder', 'Stored on server after save');
         }
 
         function toggleAiProviderFields() {
@@ -2645,21 +2625,25 @@
             $('.openrouter-only').toggle(isOpenRouter);
             $('#ai-model-search').attr('placeholder', isOpenRouter ? 'Search OpenRouter models...' : 'Search OpenAI models...');
             $('.openrouter-filters input').prop('disabled', !isOpenRouter);
-            if (!isOpenRouter) {
-                $('.openrouter-filters input').prop('checked', false);
-            }
             $('#ai_api_key_clear').val('0');
-            updateRequestModeHint();
             updateModelHint(provider);
             updateApiKeyUi(provider);
             notifyMissingSavedKey(provider);
         }
 
+        function ensureOpenRouterFilterDefaults() {
+            var $filters = $('.openrouter-filters input');
+            if (!$filters.length) return;
+            if ($filters.filter(':checked').length) return;
+            $('#openrouter-filter-text').prop('checked', true);
+            $('#openrouter-filter-input').prop('checked', true);
+            $('#openrouter-filter-output').prop('checked', true);
+        }
+
         function loadModelsForProvider(provider, force) {
             var normalized = (provider || 'openai').toLowerCase();
             if (!providerHasConfiguredKey(normalized)) {
-                modelWarnings[normalized] = providerLabel(normalized) + ' API key is not configured '
-                    + (isDirectBrowserMode() ? 'in this browser.' : 'on server.');
+                modelWarnings[normalized] = providerLabel(normalized) + ' API key is not configured on server.';
                 updateModelHint(normalized);
                 notifyMissingSavedKey(normalized);
                 if (normalized === 'openrouter') {
@@ -2678,15 +2662,12 @@
             }
         }
 
+        ensureOpenRouterFilterDefaults();
         toggleAiProviderFields();
         loadModelsForProvider($('#llm_api_provider').val() || 'openrouter', false);
         $('#llm_api_provider').on('change', function() {
             modelSelections[activeProvider] = $('#ai_model').val() || modelSelections[activeProvider] || '';
             activeProvider = ($(this).val() || 'OpenRouter').toLowerCase();
-            toggleAiProviderFields();
-            loadModelsForProvider(activeProvider, false);
-        });
-        $('#ai_request_mode').on('change', function() {
             toggleAiProviderFields();
             loadModelsForProvider(activeProvider, false);
         });
@@ -2740,26 +2721,6 @@
         $('#progress-auto-refresh').trigger('change');
 
         $('#ai-test-connection').on('click', function() {
-            var provider = ($('#llm_api_provider').val() || 'OpenRouter').toLowerCase();
-            if (isDirectBrowserMode()) {
-                if (!providerHasConfiguredKey(provider)) {
-                    toastr.error(providerLabel(provider) + ' API key is not configured in this browser.');
-                    return;
-                }
-                toastr.info('Testing direct browser AI connection...');
-                fetchModelsDirect(provider)
-                    .then(function(data) {
-                        if (!data || data.error) {
-                            toastr.error((data && data.error) || 'AI connection failed.');
-                            return;
-                        }
-                        toastr.success('Direct browser AI connection successful.');
-                    })
-                    .catch(function(err) {
-                        toastr.error('AI connection failed: ' + err.message);
-                    });
-                return;
-            }
             toastr.info('Testing server AI connection...');
             postPluginJson(pluginPath, 'test_connection', {})
                 .then(function(data) {
@@ -2775,41 +2736,21 @@
             $('#clear-ai-key').on('click', function() {
                 var provider = ($('#llm_api_provider').val() || 'OpenRouter').toLowerCase();
                 var label = provider === 'openrouter' ? 'OpenRouter' : 'OpenAI';
-                if (isDirectBrowserMode()) {
-                    if (!confirm('Clear browser-stored ' + label + ' key for direct mode?')) return;
-                    clearBrowserKey(provider);
-                    $('#ai_api_key').val('');
-                    updateApiKeyUi(provider);
-                    toastr.info(label + ' browser key cleared.');
+                if (!confirm('Clear stored ' + label + ' key? This cannot be undone.')) return;
+                $('#ai_api_key_clear').val('1');
+                $('#ai_api_key').val('');
+                var $row = $('#ai-api-key-row');
+                if (provider === 'openrouter') {
+                    $row.data('openrouter-set', 0);
                 } else {
-                    if (!confirm('Clear stored ' + label + ' key? This cannot be undone.')) return;
-                    $('#ai_api_key_clear').val('1');
-                    $('#ai_api_key').val('');
-                    var $row = $('#ai-api-key-row');
-                    if (provider === 'openrouter') {
-                        $row.data('openrouter-set', 0);
-                    } else {
-                        $row.data('openai-set', 0);
-                    }
-                    updateApiKeyUi(provider);
-                    toastr.info(label + ' key cleared. Save configuration to apply.');
+                    $row.data('openai-set', 0);
                 }
+                updateApiKeyUi(provider);
+                toastr.info(label + ' key cleared. Save configuration to apply.');
             });
             $('#ai_api_key').on('input', function() {
                 if ($(this).val()) {
                     $('#ai_api_key_clear').val('0');
-                }
-            });
-            $('#ai_api_key').on('change', function() {
-                if (!isDirectBrowserMode()) return;
-                var provider = ($('#llm_api_provider').val() || 'OpenRouter').toLowerCase();
-                var value = ($(this).val() || '').trim();
-                if (!value) return;
-                if (storeBrowserKey(provider, value)) {
-                    toastr.info(providerLabel(provider) + ' key stored in browser for direct mode.');
-                    updateApiKeyUi(provider);
-                } else {
-                    toastr.error('Unable to store browser API key.');
                 }
             });
         }
@@ -2820,15 +2761,11 @@
             var defaults = activePromptDefaults();
             var defaultPrompt = (defaults && defaults.default) ? defaults.default : '';
             var catalogingPrompt = (defaults && defaults.cataloging) ? defaults.cataloging : '';
-            $('#ai_prompt_default').val(defaultPrompt).trigger('input');
-            $('#ai_prompt_cataloging').val(catalogingPrompt).trigger('input');
+            $('#ai_prompt_default').val(dedupePromptText(defaultPrompt)).trigger('input');
+            $('#ai_prompt_cataloging').val(dedupePromptText(catalogingPrompt)).trigger('input');
             toastr.info('Prompt fields reset to shipped defaults. Save configuration to apply.');
         });
 
-        $('#ai_strict_json_mode').on('change', function() {
-            updateRequestModeHint();
-            updatePromptPlaceholders();
-        });
         updatePromptPlaceholders();
 
         $('form').on('submit', function() {
@@ -2840,18 +2777,6 @@
             if (progressFetchController) {
                 try { progressFetchController.abort(); } catch (err) { /* ignore */ }
             }
-            if (!isDirectBrowserMode()) return;
-            var provider = ($('#llm_api_provider').val() || 'OpenRouter').toLowerCase();
-            var directKey = ($('#ai_api_key').val() || '').trim();
-            if (directKey) {
-                if (storeBrowserKey(provider, directKey)) {
-                    $('#ai_api_key').val('');
-                    updateApiKeyUi(provider);
-                } else {
-                    toastr.error('Unable to store browser API key. Settings save will continue without it.');
-                }
-            }
-            $('#ai_api_key_clear').val('0');
         });
 
         $('form').on('input change', 'input, select, textarea', function() {

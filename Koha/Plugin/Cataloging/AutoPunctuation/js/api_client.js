@@ -205,139 +205,6 @@
         return buildPluginUrl(pluginPath, method, extraParams);
     }
 
-    function requestMode(settings) {
-        const mode = (settings.aiRequestMode || settings.aiClientMode || 'server').toString().toLowerCase();
-        return mode === 'direct' || mode === 'browser' ? 'direct' : 'server';
-    }
-
-    function providerFromSettings(settings) {
-        const provider = (settings.llmApiProvider || '').toString().toLowerCase();
-        return provider === 'openai' ? 'openai' : 'openrouter';
-    }
-
-    function readFromStorage(storage, keys) {
-        if (!storage) return '';
-        for (const key of keys) {
-            try {
-                const value = storage.getItem(key);
-                if (value && String(value).trim()) return String(value).trim();
-            } catch (err) {
-                // ignore storage access errors
-            }
-        }
-        return '';
-    }
-
-    function deobfuscateBrowserKey(value) {
-        const raw = (value || '').toString().trim();
-        if (!raw) return '';
-        let decoded = '';
-        try {
-            decoded = atob(raw);
-        } catch (err) {
-            return raw;
-        }
-        const mask = 73;
-        let output = '';
-        for (let i = 0; i < decoded.length; i += 1) {
-            output += String.fromCharCode(decoded.charCodeAt(i) ^ mask);
-        }
-        return output;
-    }
-
-    function directKeyFingerprint(value) {
-        const key = (value || '').toString();
-        if (!key) return 'none';
-        let hash = 5381;
-        for (let i = 0; i < key.length; i += 1) {
-            hash = ((hash << 5) + hash) + key.charCodeAt(i);
-            hash &= 0xffffffff;
-        }
-        const hex = (hash >>> 0).toString(16).padStart(8, '0');
-        return `k${key.length}-${hex}`;
-    }
-
-    function getDirectApiKey(settings, provider) {
-        if (settings && settings.aiBrowserApiKey) {
-            const value = String(settings.aiBrowserApiKey).trim();
-            if (value) return value;
-        }
-        const obfuscatedNames = provider === 'openai'
-            ? ['aacr2.openai.api_key.obf']
-            : ['aacr2.openrouter.api_key.obf'];
-        const obfuscated = readFromStorage(global.sessionStorage, obfuscatedNames) || readFromStorage(global.localStorage, obfuscatedNames);
-        if (obfuscated) {
-            const decoded = deobfuscateBrowserKey(obfuscated);
-            if (decoded) return decoded;
-        }
-        const keyNames = provider === 'openai'
-            ? ['aacr2.openai.api_key', 'aacr2_openai_api_key']
-            : ['aacr2.openrouter.api_key', 'aacr2_openrouter_api_key'];
-        return readFromStorage(global.sessionStorage, keyNames) || readFromStorage(global.localStorage, keyNames);
-    }
-
-    async function aiSuggestDirect(payload, settings) {
-        const provider = providerFromSettings(settings);
-        const apiKey = getDirectApiKey(settings, provider);
-        if (!apiKey) {
-            return {
-                ok: 0,
-                error: `Direct browser mode requires a ${provider === 'openai' ? 'OpenAI' : 'OpenRouter'} key in browser storage.`
-            };
-        }
-
-        if (settings.debugMode) {
-            console.debug('[AACR2 Assistant] Direct AI request auth context:', {
-                mode: 'direct',
-                provider,
-                keyFingerprint: directKeyFingerprint(apiKey)
-            });
-        }
-
-        const prompt = buildAiPrompt(payload, settings);
-        const expectJson = strictJsonModeEnabled();
-        const providerResult = await callWithRetries(() => (
-            provider === 'openai'
-                ? callOpenAiResponses(prompt, settings, apiKey, { expectJson })
-                : callOpenRouter(prompt, settings, apiKey, { expectJson })
-        ), settings.aiRetryCount);
-
-        if (!providerResult) {
-            return { ok: 0, error: 'AI request failed.' };
-        }
-        if (providerResult.error && !providerResult.rawText) {
-            return { ok: 0, error: providerResult.error };
-        }
-
-        let result = null;
-        if (providerResult.textMode || !providerResult.data) {
-            const rawText = providerResult.rawText || '';
-            if (isCatalogingAiRequest(payload)) {
-                result = buildCatalogingTextResponse(payload, rawText, settings, {
-                    extractionSource: 'plain_text',
-                    degradedMode: false
-                }) || buildUnstructuredAiResponse(payload, rawText, settings, {});
-            } else {
-                result = buildUnstructuredAiResponse(payload, rawText, settings, {});
-            }
-        } else {
-            result = providerResult.data;
-        }
-
-        if (!result || typeof result !== 'object') {
-            return { ok: 0, error: 'AI response was empty.' };
-        }
-        const guardrailError = validateAiResponseGuardrails(payload, result, settings);
-        if (guardrailError) {
-            return { ok: 0, error: guardrailError };
-        }
-        result = sanitizeAiResponseForChat(result);
-        if (providerResult.truncated) {
-            result = attachTruncationWarning(result);
-        }
-        return result;
-    }
-
     global.AACR2ApiClient = {
         validateSchema: validateAgainstSchema,
         postJson,
@@ -352,14 +219,10 @@
             return postJson(buildEndpoint(pluginPath, 'validate_record'), payload);
         },
         aiSuggest: async (pluginPath, payload, options) => {
-            const settings = global.AutoPunctuationSettings || {};
             const normalized = normalizeAiRequestPayload(payload);
             const errors = validateAgainstSchema('ai_request', normalized);
             if (errors.length) {
                 throw new Error(`Invalid request: ${errors.join(', ')}`);
-            }
-            if (requestMode(settings) === 'direct') {
-                return aiSuggestDirect(normalized, settings);
             }
             return postJson(buildEndpoint(pluginPath, 'ai_suggest'), normalized, options);
         },

@@ -51,10 +51,20 @@ sub _normalize_lc_text {
     $normalized =~ s/\s+/ /g;
     return $normalized;
 }
+sub _normalize_lc_class_number {
+    my ($self, $number) = @_;
+    return '' unless defined $number;
+    my $normalized = $number;
+    $normalized =~ s/\s*\.\s*/./g;
+    $normalized =~ s/\s+//g;
+    return $normalized;
+}
 sub _format_lc_call_number {
     my ($self, $class, $number) = @_;
     return '' unless $class && $number;
-    return uc($class) . ' ' . $number;
+    my $normalized_number = __PACKAGE__->_normalize_lc_class_number($number);
+    return '' unless $normalized_number ne '';
+    return uc($class) . $normalized_number;
 }
 sub _is_blocked_lc_class_prefix {
     my ($self, $value) = @_;
@@ -120,10 +130,10 @@ sub _rank_lc_candidates {
 sub _extract_lc_call_numbers {
     my ($self, $text, $settings) = @_;
     return [] unless defined $text && $text ne '';
-    my $normalized = $self->_normalize_lc_text($text);
+    my $normalized = __PACKAGE__->_normalize_lc_text($text);
     my @candidates;
     my @spans;
-    while ($normalized =~ /\b([A-Z]{1,3})\s*(\d{1,4}(?:\.\d+)?)\s*-\s*(?:([A-Z]{1,3})\s*)?(\d{1,4}(?:\.\d+)?)\b/ig) {
+    while ($normalized =~ /\b([A-Z]{1,3})\s*(\d{1,4}(?:\s*\.\s*\d+)?)\s*-\s*(?:([A-Z]{1,3})\s*)?(\d{1,4}(?:\s*\.\s*\d+)?)\b/ig) {
         push @spans, [ $-[0], $+[0] ];
     }
     if (@spans) {
@@ -132,14 +142,14 @@ sub _extract_lc_call_numbers {
             substr($normalized, $start, $end - $start, ' ' x ($end - $start));
         }
     }
-    while ($normalized =~ /\b([A-Z]{1,3})\s*(\d{1,4}(?:\.\d+)?)\b/ig) {
+    while ($normalized =~ /\b([A-Z]{1,3})\s*(\d{1,4}(?:\s*\.\s*\d+)?)\b/ig) {
         my ($class, $number) = ($1, $2);
-        next if $self->_is_blocked_lc_class_prefix($class);
-        next if $self->_looks_like_marc_tag_reference($normalized, $+[0], $number);
-        my $value = $self->_format_lc_call_number($class, $number);
+        next if __PACKAGE__->_is_blocked_lc_class_prefix($class);
+        next if __PACKAGE__->_looks_like_marc_tag_reference($normalized, $+[0], $number);
+        my $value = __PACKAGE__->_format_lc_call_number($class, $number);
         push @candidates, { value => $value, start => $-[0] } if $value;
     }
-    my $ranked = $self->_rank_lc_candidates($text, \@candidates);
+    my $ranked = __PACKAGE__->_rank_lc_candidates($text, \@candidates);
     my @ordered;
     my %seen;
     for my $cand (@{$ranked}) {
@@ -186,12 +196,12 @@ sub _normalize_subject_heading_text {
 sub _classification_range_message {
     my ($self, $text) = @_;
     return '' unless defined $text && $text ne '';
-    my $normalized = $self->_normalize_lc_text($text);
+    my $normalized = __PACKAGE__->_normalize_lc_text($text);
     $normalized =~ s/^\s+|\s+$//g;
     return 'Classification ranges are not allowed. Provide a single class number.'
-        if $normalized =~ /^[A-Z]{1,3}\s*\d{1,4}(?:\.\d+)?\s*-\s*(?:[A-Z]{1,3}\s*)?\d{1,4}(?:\.\d+)?$/;
+        if $normalized =~ /^[A-Z]{1,3}\s*\d{1,4}(?:\s*\.\s*\d+)?\s*-\s*(?:[A-Z]{1,3}\s*)?\d{1,4}(?:\s*\.\s*\d+)?$/;
     return 'Classification ranges are not allowed. Provide a single class number.'
-        if $normalized =~ /^\d{1,4}(?:\.\d+)?\s*-\s*\d{1,4}(?:\.\d+)?$/;
+        if $normalized =~ /^\d{1,4}(?:\s*\.\s*\d+)?\s*-\s*\d{1,4}(?:\s*\.\s*\d+)?$/;
     return '';
 }
 sub _is_chronological_subdivision {
@@ -455,15 +465,15 @@ sub _extract_classification_from_text {
     return '' unless defined $text && $text ne '';
     if ($text =~ /\b(?:classification|call number|lc class(?:ification)?|lcc)\b(?:\s*\([^)]*\))?\s*[:\-]\s*([^\r\n]+)/i) {
         my $segment = $1 // '';
-        my $candidates = $self->_extract_lc_call_numbers($segment, $settings);
+        my $candidates = __PACKAGE__->_extract_lc_call_numbers($segment, $settings);
         return $candidates->[0] if $candidates && @{$candidates};
     }
-    if ($text =~ /\b(lc)\b\s*[:\-]\s*([A-Z]{1,3}\s*\d{1,4}(?:\.\d+)?)/i) {
+    if ($text =~ /\b(lc)\b\s*[:\-]\s*([A-Z]{1,3}\s*\d{1,4}(?:\s*\.\s*\d+)?)/i) {
         my $segment = $2 // '';
-        my $candidates = $self->_extract_lc_call_numbers($segment, $settings);
+        my $candidates = __PACKAGE__->_extract_lc_call_numbers($segment, $settings);
         return $candidates->[0] if $candidates && @{$candidates};
     }
-    my $candidates = $self->_extract_lc_call_numbers($text, $settings);
+    my $candidates = __PACKAGE__->_extract_lc_call_numbers($text, $settings);
     return $candidates->[0] if $candidates && @{$candidates};
     return '';
 }

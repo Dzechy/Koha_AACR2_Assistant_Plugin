@@ -40,8 +40,8 @@ our $metadata = {
     name            => 'Koha_AACR2_Assistant_Plugin',
     author          => 'Duke Chijimaka Jonathan',
     date_authored   => '2025-06-02',
-    date_updated    => '2025-06-30',
-    minimum_version => '19.05',
+    date_updated    => '2026-02-20',
+    minimum_version => '25.11',
     maximum_version => undef,
     version         => $VERSION,
     description     => 'AACR2 cataloging assistant plugin for Koha with MARC21 guardrails, training guide, and optional AI guidance.',
@@ -272,6 +272,10 @@ sub _indicator_match {
 
 sub _rules_match {
     return Koha::Plugin::Cataloging::AutoPunctuation::Rules::_rules_match(@_);
+}
+
+sub _rules_match_for_coverage {
+    return Koha::Plugin::Cataloging::AutoPunctuation::Rules::_rules_match_for_coverage(@_);
 }
 
 sub _field_has_subfield {

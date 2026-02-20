@@ -14,11 +14,12 @@
             const tags = Array.from(new Set(normalizedSubjects.map(sub => sub.tag || '650')));
             clearSubjectFields(tags);
             existingSignatures.clear();
+            if (state) state.aiSubjectHistory = {};
         }
         let applied = 0;
         let duplicates = 0;
         let failed = 0;
-        normalizedSubjects.forEach(subject => {
+        normalizedSubjects.forEach((subject, index) => {
             const result = applySubjectObject(subject, settings, state, {
                 replace,
                 existingSignatures,
@@ -26,6 +27,13 @@
             });
             if (result && result.ok) {
                 applied += 1;
+                if (state) {
+                    if (!state.aiSubjectHistory || typeof state.aiSubjectHistory !== 'object') state.aiSubjectHistory = {};
+                    state.aiSubjectHistory[index] = {
+                        undoChanges: cloneSubjectChanges(result.changes || []),
+                        redoChanges: []
+                    };
+                }
             } else if (result && result.reason === 'duplicate') {
                 duplicates += 1;
             } else {
@@ -69,6 +77,7 @@
             if (!confirm('Replace existing subject fields for this tag? This cannot be undone.')) return false;
             clearSubjectFields([subject.tag || '650']);
             existingSignatures.clear();
+            if (state) state.aiSubjectHistory = {};
         }
         const result = applySubjectObject(subject, settings, state, {
             replace,
@@ -83,8 +92,57 @@
             }
             return false;
         }
+        if (state) {
+            if (!state.aiSubjectHistory || typeof state.aiSubjectHistory !== 'object') state.aiSubjectHistory = {};
+            state.aiSubjectHistory[index] = {
+                undoChanges: cloneSubjectChanges(result.changes || []),
+                redoChanges: []
+            };
+        }
         refreshAll(settings);
         toast('info', 'Applied 1 subject heading.');
+        return true;
+    }
+
+    function undoAiSubjectApplyByIndex(settings, state, index) {
+        if (!state || state.readOnly) return false;
+        const history = (state.aiSubjectHistory && typeof state.aiSubjectHistory === 'object')
+            ? state.aiSubjectHistory
+            : {};
+        const entry = history[index];
+        if (!entry || !Array.isArray(entry.undoChanges) || !entry.undoChanges.length) {
+            toast('info', 'Nothing to undo for this subject.');
+            return false;
+        }
+        if (!applySubjectChangeList(entry.undoChanges, 'previous', state)) {
+            toast('warning', 'Unable to undo this subject change.');
+            return false;
+        }
+        entry.redoChanges = cloneSubjectChanges(entry.undoChanges);
+        entry.undoChanges = [];
+        refreshAll(settings);
+        toast('info', 'Subject change undone.');
+        return true;
+    }
+
+    function redoAiSubjectApplyByIndex(settings, state, index) {
+        if (!state || state.readOnly) return false;
+        const history = (state.aiSubjectHistory && typeof state.aiSubjectHistory === 'object')
+            ? state.aiSubjectHistory
+            : {};
+        const entry = history[index];
+        if (!entry || !Array.isArray(entry.redoChanges) || !entry.redoChanges.length) {
+            toast('info', 'Nothing to redo for this subject.');
+            return false;
+        }
+        if (!applySubjectChangeList(entry.redoChanges, 'next', state)) {
+            toast('warning', 'Unable to redo this subject change.');
+            return false;
+        }
+        entry.undoChanges = cloneSubjectChanges(entry.redoChanges);
+        entry.redoChanges = [];
+        refreshAll(settings);
+        toast('info', 'Subject change redone.');
         return true;
     }
 
@@ -387,10 +445,12 @@
                 tree: [
                     'Prefix other title info with " : ".',
                     'If $b begins with "=", use " = " instead.',
+                    'If $c follows, end $b with " / ".',
                     'If $c does not follow, end $b with ".".'
                 ],
                 examples: [
                     { before: 'a novel', after: ' : a novel.' },
+                    { before: 'a novel', after: ' : a novel /' },
                     { before: '= Le grand Gatsby', after: ' = Le grand Gatsby.' },
                     { before: ' : a novel', after: ' : a novel.' }
                 ]
@@ -460,12 +520,13 @@
                 ruleId: 'AACR2_TITLE_245C_001',
                 text: 'Statement of responsibility punctuation.',
                 tree: [
-                    'First statement: prefix with " / ".',
+                    'First statement: slash should not be typed in 245$c.',
+                    'Place " / " at the end of 245$b when 245$c follows.',
                     'Additional statements: prefix with " ; ".',
                     'End the final statement with ".".'
                 ],
                 examples: [
-                    { before: 'F. Scott Fitzgerald', after: ' / F. Scott Fitzgerald.' },
+                    { before: '/ F. Scott Fitzgerald', after: 'F. Scott Fitzgerald.' },
                     { before: 'edited by John Smith', after: ' ; edited by John Smith.' }
                 ]
             },
@@ -1074,7 +1135,6 @@
                 code: step.code || '',
                 occurrence: '',
                 module: step.module || '',
-                tier: step.tier || '',
                 alternateTags: step.alternateTags || [],
                 ruleId: step.ruleId || (rule ? rule.id : ''),
                 rule,

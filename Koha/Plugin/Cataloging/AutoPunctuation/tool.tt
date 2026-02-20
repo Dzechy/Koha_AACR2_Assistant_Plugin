@@ -4,8 +4,8 @@
 [% INCLUDE 'calendar.inc' %]
 <style>
     :root {
-        --aacr2-accent: #0c223f;
-        --aacr2-accent-soft: #e7eef7;
+        --aacr2-accent: #408540;
+        --aacr2-accent-soft: #eaf4ea;
         --aacr2-border: #d7dde6;
         --aacr2-surface: #f4f7fb;
         --aacr2-card: #ffffff;
@@ -54,37 +54,63 @@
     .alert-success {
         background: #dff0d8;
         border: 1px solid #d6e9c6;
-        color: #3c763d;
+        color: #408540;
         padding: 10px;
         border-radius: 4px;
     }
+    .label {
+        background: transparent;
+        border: none;
+        padding: 0;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        line-height: 1.2;
+    }
+    .label::before {
+        content: '';
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #8d99a6;
+        display: inline-block;
+        flex: 0 0 auto;
+    }
     .label-success {
-        background-color: #5cb85c;
-        color: white;
-        padding: 2px 6px;
-        border-radius: 3px;
-        font-weight: bold;
+        color: #408540;
+    }
+    .label-success::before {
+        background: #408540;
     }
     .label-danger {
-        background-color: #d9534f;
-        color: white;
-        padding: 2px 6px;
-        border-radius: 3px;
-        font-weight: bold;
+        color: #b33a3a;
     }
-    .label-warning {
-        background-color: #f0ad4e;
-        color: white;
-        padding: 2px 6px;
-        border-radius: 3px;
-        font-weight: bold;
+    .label-danger::before {
+        background: #b33a3a;
     }
+    .label-warning,
     .label-default {
-        background-color: #777;
-        color: white;
-        padding: 2px 6px;
-        border-radius: 3px;
-        font-weight: bold;
+        color: #b33a3a;
+    }
+    .label-warning::before,
+    .label-default::before {
+        background: #b33a3a;
+    }
+    .label.dot-only {
+        font-size: 0;
+        line-height: 0;
+        gap: 0;
+        min-width: 8px;
+    }
+    .label.dot-only::before {
+        margin: 0;
+    }
+    .label.text-only {
+        gap: 0;
+    }
+    .label.text-only::before {
+        display: none;
     }
     .field-table {
         width: 100%;
@@ -143,6 +169,20 @@
     .status-value {
         color: #333;
         font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .status-value .label {
+        color: inherit;
+    }
+    .status-value .label-success {
+        color: #408540 !important;
+    }
+    .status-value .label-danger,
+    .status-value .label-warning,
+    .status-value .label-default {
+        color: #b33a3a !important;
     }
     .status-value a {
         word-break: break-all;
@@ -150,6 +190,17 @@
     .warning-text {
         color: red;
         font-weight: bold;
+    }
+    @media (max-width: 991px) {
+        .main .row > [class*="col-sm-"] {
+            float: none;
+            width: 100%;
+            left: auto;
+            right: auto;
+        }
+        .status-grid {
+            grid-template-columns: 1fr;
+        }
     }
 </style>
 </head>
@@ -191,23 +242,19 @@
                                         <span class="status-label">AACR2 Rules &amp; Punctuation</span>
                                         <span class="status-value">
                                             [% IF settings.enabled %]
-                                                <span class="label label-success">Enabled</span>
+                                                <span class="label label-success dot-only" title="Enabled" aria-label="Enabled">Enabled</span>
                                             [% ELSE %]
-                                                <span class="label label-danger">Disabled</span>
+                                                <span class="label label-danger dot-only" title="Disabled" aria-label="Disabled">Disabled</span>
                                             [% END %]
                                         </span>
-                                    </div>
-                                    <div class="status-item">
-                                        <span class="status-label">Cataloging Standard</span>
-                                        <span class="status-value">AACR2 (MARC21)</span>
                                     </div>
                                     <div class="status-item">
                                         <span class="status-label">Debug Mode</span>
                                         <span class="status-value">
                                             [% IF settings.debug_mode %]
-                                                <span class="label label-warning">Enabled</span>
+                                                <span class="label label-success dot-only" title="Enabled" aria-label="Enabled">Enabled</span>
                                             [% ELSE %]
-                                                <span class="label label-default">Disabled</span>
+                                                <span class="label label-danger dot-only" title="Disabled" aria-label="Disabled">Disabled</span>
                                             [% END %]
                                         </span>
                                     </div>
@@ -215,9 +262,9 @@
                                         <span class="status-label">Interactive Guide</span>
                                         <span class="status-value">
                                             [% IF settings.enable_guide %]
-                                                <span class="label label-success">Enabled</span>
+                                                <span class="label label-success dot-only" title="Enabled" aria-label="Enabled">Enabled</span>
                                             [% ELSE %]
-                                                <span class="label label-danger">Disabled</span>
+                                                <span class="label label-danger dot-only" title="Disabled" aria-label="Disabled">Disabled</span>
                                             [% END %]
                                         </span>
                                     </div>
@@ -225,9 +272,9 @@
                                         <span class="status-label">Internship Mode</span>
                                         <span class="status-value">
                                             [% IF settings.internship_mode %]
-                                                <span class="label label-success">Enabled</span>
+                                                <span class="label label-success dot-only" title="Enabled" aria-label="Enabled">Enabled</span>
                                             [% ELSE %]
-                                                <span class="label label-danger">Disabled</span>
+                                                <span class="label label-danger dot-only" title="Disabled" aria-label="Disabled">Disabled</span>
                                             [% END %]
                                         </span>
                                     </div>
@@ -235,9 +282,9 @@
                                         <span class="status-label">AACR2 Guardrails</span>
                                         <span class="status-value">
                                             [% IF settings.enforce_aacr2_guardrails %]
-                                                <span class="label label-success">Enforced</span>
+                                                <span class="label label-success dot-only" title="Enforced" aria-label="Enforced">Enforced</span>
                                             [% ELSE %]
-                                                <span class="label label-default">Soft</span>
+                                                <span class="label label-danger dot-only" title="Disabled" aria-label="Disabled">Disabled</span>
                                             [% END %]
                                         </span>
                                     </div>
@@ -245,37 +292,42 @@
                                         <span class="status-label">Live Validation</span>
                                         <span class="status-value">
                                             [% IF settings.enable_live_validation %]
-                                                <span class="label label-warning">On</span>
+                                                <span class="label label-success dot-only" title="On" aria-label="On">On</span>
                                             [% ELSE %]
-                                                <span class="label label-default">Off</span>
+                                                <span class="label label-danger dot-only" title="Off" aria-label="Off">Off</span>
                                             [% END %]
                                         </span>
                                     </div>
                                     <div class="status-item">
                                         <span class="status-label">AI Assist</span>
                                         <span class="status-value">
-                                            [% SET ai_mode = (ai_request_mode || 'server') | lower %]
                                             [% IF ai_ready %]
-                                                <span class="label label-success">Enabled</span>
-                                                [% IF ai_mode == 'direct' %]
-                                                    <span class="hint">Direct mode active; browser-local key is required per browser.</span>
-                                                [% END %]
-                                            [% ELSIF settings.ai_enable && ai_mode == 'direct' %]
-                                                <span class="label label-warning">Enabled (browser key required)</span>
+                                                <span class="label label-success dot-only" title="Enabled" aria-label="Enabled"></span>
                                             [% ELSIF settings.ai_enable %]
-                                                <span class="label label-warning">Enabled (key missing)</span>
+                                                <span class="label label-danger dot-only" title="Disabled (key missing)" aria-label="Disabled (key missing)"></span>
                                             [% ELSE %]
-                                                <span class="label label-danger">Disabled</span>
+                                                <span class="label label-danger dot-only" title="Disabled" aria-label="Disabled"></span>
                                             [% END %]
                                         </span>
                                     </div>
                                     <div class="status-item">
-                                        <span class="status-label">AI Request Mode</span>
-                                        <span class="status-value">
-                                            [% IF ai_mode == 'direct' %]
-                                                <span class="label label-warning">Direct browser</span>
+                                        <span class="status-label">API Key Status</span>
+                                        <span class="status-value"
+                                              id="aacr2-tool-ai-key-status"
+                                              data-provider="[% IF ai_provider_is_openrouter %]openrouter[% ELSE %]openai[% END %]"
+                                              data-server-configured="[% IF ai_provider_is_openrouter %][% IF openrouter_api_key_set %]1[% ELSE %]0[% END %][% ELSE %][% IF llm_api_key_set %]1[% ELSE %]0[% END %][% END %]">
+                                            [% IF ai_provider_is_openrouter %]
+                                                [% IF openrouter_api_key_set %]
+                                                    <span class="label label-success dot-only" title="Configured" aria-label="Configured"></span>
+                                                [% ELSE %]
+                                                    <span class="label label-danger dot-only" title="Missing" aria-label="Missing"></span>
+                                                [% END %]
                                             [% ELSE %]
-                                                <span class="label label-default">Server (Koha)</span>
+                                                [% IF llm_api_key_set %]
+                                                    <span class="label label-success dot-only" title="Configured" aria-label="Configured"></span>
+                                                [% ELSE %]
+                                                    <span class="label label-danger dot-only" title="Missing" aria-label="Missing"></span>
+                                                [% END %]
                                             [% END %]
                                         </span>
                                     </div>
@@ -288,28 +340,8 @@
                                         <span class="status-value">[% ai_model || 'Not set' %]</span>
                                     </div>
                                     <div class="status-item">
-                                        <span class="status-label">AI Key Status</span>
-                                        <span class="status-value"
-                                              id="aacr2-tool-ai-key-status"
-                                              data-provider="[% IF ai_provider_is_openrouter %]openrouter[% ELSE %]openai[% END %]"
-                                              data-mode="[% ai_mode %]"
-                                              data-server-configured="[% IF ai_provider_is_openrouter %][% IF openrouter_api_key_set %]1[% ELSE %]0[% END %][% ELSE %][% IF llm_api_key_set %]1[% ELSE %]0[% END %][% END %]">
-                                            [% IF ai_mode == 'direct' %]
-                                                <span class="label label-default">Browser key unknown</span>
-                                            [% ELSIF ai_provider_is_openrouter %]
-                                                [% IF openrouter_api_key_set %]
-                                                    <span class="label label-success">Configured</span>
-                                                [% ELSE %]
-                                                    <span class="label label-danger">Missing</span>
-                                                [% END %]
-                                            [% ELSE %]
-                                                [% IF llm_api_key_set %]
-                                                    <span class="label label-success">Configured</span>
-                                                [% ELSE %]
-                                                    <span class="label label-danger">Missing</span>
-                                                [% END %]
-                                            [% END %]
-                                        </span>
+                                        <span class="status-label">Cataloging Standard</span>
+                                        <span class="status-value">AACR2 (MARC21)</span>
                                     </div>
                                     <div class="status-item">
                                         <span class="status-label">Author LinkedIn</span>
@@ -349,7 +381,7 @@
                                     <li>AACR2 rules and punctuation guardrails</li>
                                     <li>Inline indicators, ghost text suggestions, and quick fixes</li>
                                     <li>Handles field relationships (e.g., 245$a adjusts based on $b, $c)</li>
-                                    <li>Auto-apply toggle or suggestion-only mode</li>
+                                    <li>Auto-apply fixes toggle or suggestion-only mode</li>
                                     <li>Intern and exclusion lists for controlled training</li>
                                     <li>Live validation that blocks save when violations remain (optional)</li>
                                     <li>Interactive guide for training</li>
@@ -485,76 +517,6 @@
         </div>
     </div>
 </div>
-<script>
-    (function() {
-        var statusEl = document.getElementById('aacr2-tool-ai-key-status');
-        if (!statusEl) return;
-        var mode = (statusEl.getAttribute('data-mode') || 'server').toLowerCase();
-        if (mode !== 'direct') return;
-        var provider = (statusEl.getAttribute('data-provider') || 'openrouter').toLowerCase();
-        var keys = provider === 'openai'
-            ? ['aacr2.openai.api_key.obf', 'aacr2.openai.api_key', 'aacr2_openai_api_key']
-            : ['aacr2.openrouter.api_key.obf', 'aacr2.openrouter.api_key', 'aacr2_openrouter_api_key'];
-
-        function deobfuscate(raw) {
-            if (!raw) return '';
-            var decoded = '';
-            try {
-                decoded = atob(raw);
-            } catch (err) {
-                return raw;
-            }
-            var mask = 73;
-            var out = '';
-            for (var i = 0; i < decoded.length; i++) {
-                out += String.fromCharCode(decoded.charCodeAt(i) ^ mask);
-            }
-            return out;
-        }
-
-        function readBrowserKey() {
-            var stores = [window.sessionStorage, window.localStorage];
-            for (var i = 0; i < stores.length; i++) {
-                var store = stores[i];
-                if (!store) continue;
-                for (var j = 0; j < keys.length; j++) {
-                    var key = keys[j];
-                    var value = '';
-                    try {
-                        value = store.getItem(key) || '';
-                    } catch (err) {
-                        value = '';
-                    }
-                    if (!value) continue;
-                    if (key.indexOf('.obf') !== -1) {
-                        value = deobfuscate(value);
-                    }
-                    if (String(value || '').trim()) return String(value).trim();
-                }
-            }
-            return '';
-        }
-
-        function keyFingerprint(raw) {
-            if (!raw) return '';
-            var hash = 5381;
-            for (var i = 0; i < raw.length; i++) {
-                hash = ((hash << 5) + hash) + raw.charCodeAt(i);
-                hash &= 0xffffffff;
-            }
-            var hex = (hash >>> 0).toString(16);
-            while (hex.length < 8) hex = '0' + hex;
-            return 'k' + raw.length + '-' + hex;
-        }
-
-        var browserKey = readBrowserKey();
-        if (browserKey) {
-            statusEl.innerHTML = '<span class="label label-success">Configured (browser ' + keyFingerprint(browserKey) + ')</span>';
-        } else {
-            statusEl.innerHTML = '<span class="label label-danger">Missing (browser)</span>';
-        }
-    })();
-</script>
 <script>
     (function() {
         if (document.getElementById('aacr2-update-alert')) return;

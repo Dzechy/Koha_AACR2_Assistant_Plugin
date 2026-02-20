@@ -32,6 +32,13 @@
         $('#aacr2-guardrail-status').text(`Guardrails: ${status}`);
     }
 
+    function isInternFeatureAllowed(state, key) {
+        if (typeof internFeatureAllowed === 'function') {
+            return internFeatureAllowed(state, key);
+        }
+        return true;
+    }
+
     function applyAllFindings(settings) {
         const state = global.AACR2IntellisenseState;
         if (!state) return;
@@ -68,11 +75,29 @@
             return;
         }
         const change = state.undoStack.pop();
-        const $field = findFieldElement(change.tag, change.code, change.occurrence);
-        if ($field.length) {
-            $field.val(change.previous);
+        if (applyRecordedChange(change, 'previous')) {
+            if (!state.redoStack) state.redoStack = [];
+            state.redoStack.push(change);
             refreshAll(global.AutoPunctuationSettings || {});
             toast('info', 'Last change undone.');
+        }
+    }
+
+    function redoLastChange() {
+        const state = global.AACR2IntellisenseState;
+        if (!state || !state.redoStack || !state.redoStack.length) {
+            toast('info', 'Nothing to redo.');
+            return;
+        }
+        if (state.readOnly) {
+            toast('warning', 'Redo is disabled in internship mode.');
+            return;
+        }
+        const change = state.redoStack.pop();
+        if (applyRecordedChange(change, 'next')) {
+            state.undoStack.push(change);
+            refreshAll(global.AutoPunctuationSettings || {});
+            toast('info', 'Last change redone.');
         }
     }
 
@@ -86,13 +111,29 @@
             toast('warning', 'Undo is disabled in internship mode.');
             return;
         }
+        if (!state.redoStack) state.redoStack = [];
         while (state.undoStack.length) {
             const change = state.undoStack.pop();
-            const $field = findFieldElement(change.tag, change.code, change.occurrence);
-            if ($field.length) $field.val(change.previous);
+            if (applyRecordedChange(change, 'previous')) {
+                state.redoStack.push(change);
+            }
         }
         refreshAll(global.AutoPunctuationSettings || {});
         toast('info', 'All changes undone.');
+    }
+
+    function applyRecordedChange(change, direction) {
+        if (!change) return false;
+        const value = direction === 'previous' ? change.previous : change.next;
+        if ((change.kind || 'subfield') === 'indicator') {
+            const indicator = Number(change.indicator || 0);
+            if (!(indicator === 1 || indicator === 2)) return false;
+            return setIndicatorValue(change.tag, indicator, change.occurrence, value || '');
+        }
+        const $field = findFieldElement(change.tag, change.code, change.occurrence);
+        if (!$field.length) return false;
+        $field.val(value || '');
+        return true;
     }
 
     function refreshAll(settings) {
@@ -110,7 +151,17 @@
     function maybeShowGhost(element, findings, settings, state) {
         $(element).siblings('.aacr2-ghost-text').remove();
         if (!settings.enabled || state.readOnly) return;
-        const candidate = findings.find(finding => finding.severity !== 'ERROR' && finding.expected_value);
+        const meta = parseFieldMeta(element);
+        if (!meta) return;
+        const occurrenceKey = normalizeOccurrenceKey(meta.occurrence);
+        const relevant = (findings || []).filter(finding => {
+            if (!finding || !finding.expected_value) return false;
+            if ((finding.severity || '').toUpperCase() === 'ERROR') return false;
+            if ((finding.tag || '') !== meta.tag) return false;
+            if ((finding.subfield || '').toLowerCase() !== (meta.code || '').toLowerCase()) return false;
+            return normalizeOccurrenceKey(finding.occurrence || '') === occurrenceKey;
+        });
+        const candidate = relevant.find(f => (f.severity || '').toUpperCase() === 'WARNING') || relevant[0];
         if (!candidate) return;
         const ghostText = computeGhostText(candidate.current_value, candidate.expected_value);
         if (!ghostText) return;
@@ -140,7 +191,7 @@
         if (!$panel || !$panel.length) return;
         const $status = $panel.find('#aacr2-ai-status');
         if (!$status.length) return;
-        $status.removeClass('success error info').addClass(type || 'info');
+        $status.removeClass('success error info warning').addClass(type || 'info');
         $status.text(message || '');
     }
 
@@ -148,7 +199,7 @@
         if (!$panel || !$panel.length) return;
         const $status = $panel.find('#aacr2-ai-cataloging-status');
         if (!$status.length) return;
-        $status.removeClass('success error info').addClass(type || 'info');
+        $status.removeClass('success error info warning').addClass(type || 'info');
         $status.text(message || '');
     }
 
@@ -319,8 +370,9 @@
                 $list.append($row);
             });
             const readOnly = state && state.readOnly;
+            const canApply = isInternFeatureAllowed(state, 'aiApplyActions') && !readOnly;
             $actions.show();
-            $actions.find('button').prop('disabled', !!readOnly);
+            $actions.find('button').prop('disabled', !canApply);
         } else if (!issues.length && findings.length) {
             findings.forEach(finding => {
                 const message = (finding.message || '').trim();
@@ -343,6 +395,10 @@
     }
 
     function applySelectedAiPatches(state) {
+        if (state && (!isInternFeatureAllowed(state, 'aiApplyActions') || state.readOnly)) {
+            toast('warning', 'AI apply actions are disabled in internship mode.');
+            return;
+        }
         const $panel = $('#aacr2-ai-panel');
         const patches = state && state.aiPunctuation ? state.aiPunctuation.patches || [] : [];
         if (!patches.length) {
@@ -368,6 +424,10 @@
     }
 
     function applyAllAiPatches(state) {
+        if (state && (!isInternFeatureAllowed(state, 'aiApplyActions') || state.readOnly)) {
+            toast('warning', 'AI apply actions are disabled in internship mode.');
+            return;
+        }
         const patches = state && state.aiPunctuation ? state.aiPunctuation.patches || [] : [];
         if (!patches.length) {
             toast('info', 'No AI rule or punctuation suggestions to apply.');
@@ -388,33 +448,132 @@
         if (!$panel || !$panel.length) return { element: null, meta: null };
         const element = resolveAiTargetElement(state);
         const meta = element ? parseFieldMeta(element) : null;
+        const $runBtn = $panel.find('#aacr2-ai-panel-run');
         const requestState = getAiRequestState(state, 'punctuation');
         const inFlight = requestState && requestState.inFlight;
+        const punctuationAllowed = isInternFeatureAllowed(state, 'aiPunctuation');
         if (!meta) {
             $panel.data('targetElement', null);
             $panel.data('targetMeta', null);
             $panel.find('#aacr2-ai-selected').text('None');
             $panel.find('#aacr2-ai-current').text('(no MARC field selected)');
+            if ($runBtn.length) $runBtn.prop('disabled', true);
             if (!inFlight) {
                 updateAiPanelStatus($panel, 'Select a MARC field to enable rule and punctuation suggestions.', 'info');
             }
             return { element: null, meta: null };
         }
+        const currentValue = ($(element).val() || '').toString();
+        const fieldContext = buildFieldContext(meta.tag, meta.occurrence);
+        const hasValue = currentValue.trim().length > 0;
+        const excluded = isExcluded(settings, state, meta.tag, meta.code);
+        const covered = !!(global.AACR2RulesEngine
+            && typeof global.AACR2RulesEngine.isFieldCovered === 'function'
+            && global.AACR2RulesEngine.isFieldCovered(
+                meta.tag,
+                meta.code,
+                (fieldContext && fieldContext.ind1) || '',
+                (fieldContext && fieldContext.ind2) || '',
+                (state && state.rules) || []
+            ));
         const label = `${meta.tag}$${meta.code}${meta.occurrence ? ` (${meta.occurrence})` : ''}`;
         $panel.data('targetElement', element);
         $panel.data('targetMeta', meta);
         $panel.find('#aacr2-ai-selected').text(label);
-        $panel.find('#aacr2-ai-current').text($(element).val() || '(empty)');
+        $panel.find('#aacr2-ai-current').text(currentValue || '(empty)');
+        if ($runBtn.length) {
+            $runBtn.prop('disabled', !punctuationAllowed || !hasValue || excluded || !covered);
+        }
         if (!inFlight) {
-            updateAiPanelStatus($panel, '', 'info');
+            if (!punctuationAllowed) {
+                updateAiPanelStatus($panel, 'AI punctuation requests are disabled for this internship profile.', 'warning');
+            } else if (!hasValue) {
+                updateAiPanelStatus($panel, `Enter a value in ${label} to run rules and punctuation suggestions.`, 'info');
+            } else if (excluded) {
+                updateAiPanelStatus($panel, `AI assistance is disabled for excluded field ${meta.tag}$${meta.code}.`, 'warning');
+            } else if (!covered) {
+                updateAiPanelStatus($panel, 'No AACR2 rule defined for this field; AI assistance disabled.', 'warning');
+            } else {
+                updateAiPanelStatus($panel, '', 'info');
+            }
         }
         return { element, meta };
+    }
+
+    function formatCatalogingResponseHtml(text) {
+        const raw = (text || '').toString().replace(/\r\n?/g, '\n').trim();
+        if (!raw) return '(none)';
+        return raw.split('\n').map(line => {
+            const escaped = escapeAttr(line || '');
+            return escaped.replace(
+                /^(\s*)(Classification|Subjects|Confidence|Rationale)(\s*:)/i,
+                '$1<strong>$2</strong>$3'
+            );
+        }).join('<br/>');
     }
 
     function selectedCallNumberPrefix($panel) {
         if (!$panel || !$panel.length) return '';
         const value = $panel.find('input[name="aacr2-ai-prefix-type"]:checked').val();
         return (value || '').toString().trim();
+    }
+
+    function apply942PartsEnabled($panel) {
+        if (!$panel || !$panel.length) return false;
+        return !!$panel.find('#aacr2-ai-apply-942-parts').is(':checked');
+    }
+
+    function storePendingItemCallNumber(callNumber) {
+        const value = (callNumber || '').toString().trim();
+        if (!value) return;
+        try {
+            if (window.sessionStorage) {
+                window.sessionStorage.setItem('aacr2PendingItemCallNumber', value);
+            }
+        } catch (err) {
+            // ignore storage failures
+        }
+    }
+
+    function resolveTagOccurrence(tag, preferredCodes) {
+        if (!tag) return '';
+        const codes = Array.isArray(preferredCodes) && preferredCodes.length ? preferredCodes : ['a'];
+        for (const code of codes) {
+            const $field = findFieldElement(tag, code, '');
+            if ($field && $field.length) {
+                const meta = parseFieldMeta($field[0]);
+                return meta ? (meta.occurrence || '') : '';
+            }
+        }
+        return '';
+    }
+
+    function ensureSubfieldInputFlexible(tag, occurrence, code) {
+        const existing = findFieldElement(tag, code, occurrence);
+        if (existing && existing.length) return existing;
+        let $created = ensureSubfieldInput(tag, occurrence, code);
+        if ($created && $created.length) return $created;
+        const baseCodes = ['a', 'c', 'h', 'i', 'm', 'b', 'n', 'p', 'q'];
+        for (const baseCode of baseCodes) {
+            const $base = findFieldElement(tag, baseCode, occurrence);
+            if ($base && $base.length && typeof cloneSubfieldRow === 'function') {
+                $created = cloneSubfieldRow($base, tag, code, occurrence);
+                if ($created && $created.length) return $created;
+            }
+        }
+        return $();
+    }
+
+    function setSubfieldValueWithUndo($field, target, nextValue, state) {
+        if (!$field || !$field.length || !target) return false;
+        const previous = ($field.val() || '').toString();
+        const next = (nextValue || '').toString();
+        if (previous === next) return false;
+        recordUndo(target, previous, next);
+        $field.val(next);
+        $field.trigger('change');
+        markFieldForRevalidation(state, target);
+        return true;
     }
 
     function updateAiCatalogingContext($panel, settings, state) {
@@ -436,7 +595,11 @@
         const cutter = buildCutterSanborn(cutterSource.value || '', cutterSource.tag || '');
         const year = yearInfo.value || '';
         const prefix = selectedCallNumberPrefix($panel);
-        const callNumber = buildCallNumber(classification, cutter, year, prefix);
+        const callNumberParts = buildCallNumberParts(classification, cutter, year, prefix);
+        const callNumber = callNumberParts.full;
+        const readOnly = !!(state && state.readOnly);
+        const catalogingAllowed = isInternFeatureAllowed(state, 'aiCataloging');
+        const aiApplyAllowed = isInternFeatureAllowed(state, 'aiApplyActions');
 
         $panel.find('#aacr2-ai-title').text(titleInfo.value || '(missing)');
         $panel.find('#aacr2-ai-cutter-source').text(cutterSource.label || 'Title');
@@ -462,14 +625,16 @@
             state.aiSuggestions.subjects = normalizedSubjects;
         }
         renderAiSubjectList($panel, normalizedSubjects);
-        $panel.find('#aacr2-ai-response').text(aiSuggestions.rawText || '(none)');
+        $panel.find('#aacr2-ai-response').html(formatCatalogingResponseHtml(aiSuggestions.rawText || '(none)'));
 
         const hasTitle = !!titleInfo.title;
         const selection = getAiCatalogingSelectionState($panel, settings);
         const $runBtn = $panel.find('#aacr2-ai-run-cataloging');
-        if ($runBtn.length) $runBtn.prop('disabled', !hasTitle || !selection.hasFeature);
+        if ($runBtn.length) $runBtn.prop('disabled', !catalogingAllowed || !hasTitle || !selection.hasFeature);
         let status = '';
-        if (!hasTitle) {
+        if (!catalogingAllowed) {
+            status = 'AI cataloging requests are disabled for this internship profile.';
+        } else if (!hasTitle) {
             status = 'Title source requires 245$a. 245$b and 245$c are included when present.';
         } else if (!selection.hasFeature) {
             status = 'Select classification and/or subjects to enable suggestions.';
@@ -477,18 +642,47 @@
         const requestState = getAiRequestState(state, 'cataloging');
         const inFlight = requestState && requestState.inFlight;
         if (!inFlight) {
-            $panel.find('#aacr2-ai-cataloging-status')
-                .text(status)
-                .toggleClass('error', !hasTitle)
-                .toggleClass('info', hasTitle);
+            updateAiCatalogingStatus($panel, status, hasTitle ? 'info' : 'error');
+        }
+        const $useSuggested = $panel.find('#aacr2-ai-use-suggested-class');
+        if ($useSuggested.length) {
+            const hasManualClass = !!classificationInput.toString().trim() && !inputRangeMessage;
+            const hasSuggestedClass = !!(aiSuggestions.classification || '').toString().trim() && !suggestionRangeMessage;
+            $useSuggested.prop('disabled', !!(readOnly || !aiApplyAllowed || (!hasSuggestedClass && !hasManualClass)));
         }
         const $applyCall = $panel.find('#aacr2-ai-apply-callnumber');
         if ($applyCall.length) {
-            const readOnly = state && state.readOnly;
-            $applyCall.prop('disabled', !!(inputRangeMessage || aiRangeError || readOnly));
+            const hasCallData = !!callNumber;
+            const target = findCallNumberTarget();
+            const hasTarget = !!(target && target.$field && target.$field.length);
+            $applyCall.prop('disabled', !!(inputRangeMessage || aiRangeError || readOnly || !aiApplyAllowed || !hasCallData || !hasTarget));
+        }
+        const $undoCall = $panel.find('#aacr2-ai-undo-callnumber');
+        if ($undoCall.length) {
+            const hasUndo = !!(state && state.undoStack && state.undoStack.length);
+            $undoCall.prop('disabled', !!(readOnly || !aiApplyAllowed || !hasUndo));
+        }
+        const $redoCall = $panel.find('#aacr2-ai-redo-callnumber');
+        if ($redoCall.length) {
+            const hasRedo = !!(state && state.redoStack && state.redoStack.length);
+            $redoCall.prop('disabled', !!(readOnly || !aiApplyAllowed || !hasRedo));
+        }
+        const $apply942 = $panel.find('#aacr2-ai-apply-942-parts');
+        if ($apply942.length) {
+            $apply942.prop('disabled', !!(readOnly || !aiApplyAllowed));
         }
         updateAiCatalogingControls($panel, settings);
-        return { titleInfo, cutterSource, year, classification, callNumber, cutter, prefix };
+        return {
+            titleInfo,
+            cutterSource,
+            year,
+            classification,
+            callNumber,
+            classSegment: callNumberParts.classSegment,
+            cutterSegment: callNumberParts.cutterSegment,
+            cutter,
+            prefix
+        };
     }
 
     function getAiCatalogingSelectionState($panel, settings) {
@@ -506,14 +700,16 @@
         if (!$panel || !$panel.length) return;
         const selection = getAiCatalogingSelectionState($panel, settings);
         const $button = $panel.find('#aacr2-ai-run-cataloging');
+        const state = global.AACR2IntellisenseState;
+        const catalogingAllowed = isInternFeatureAllowed(state, 'aiCataloging');
+        const aiApplyAllowed = isInternFeatureAllowed(state, 'aiApplyActions');
         if ($button.length) {
             $button.text(selection.label);
-            $button.prop('disabled', $button.prop('disabled') || !selection.hasFeature);
+            $button.prop('disabled', $button.prop('disabled') || !selection.hasFeature || !catalogingAllowed);
         }
-        const state = global.AACR2IntellisenseState;
-        const $itemButtons = $panel.find('.aacr2-ai-subject-apply');
+        const $itemButtons = $panel.find('.aacr2-ai-subject-apply, .aacr2-ai-subject-undo, .aacr2-ai-subject-redo');
         if ($itemButtons.length) {
-            $itemButtons.prop('disabled', !!(state && state.readOnly));
+            $itemButtons.prop('disabled', !!(state && state.readOnly) || !aiApplyAllowed);
         }
     }
 
@@ -528,6 +724,10 @@
     }
 
     function showAiAssistPanel(settings, state) {
+        if (!isInternFeatureAllowed(state, 'aiAssistToggle')) {
+            toast('warning', 'AI Assist is disabled for this internship profile.');
+            return;
+        }
         let $panel = $('#aacr2-ai-panel');
         if (!$panel.length) {
             $panel = $(`
@@ -535,10 +735,9 @@
                     <header>
                         <span>AI Assist</span>
                         <div>
-                            <button type="button" class="btn btn-xs btn-default" id="aacr2-ai-panel-minimize">Minimize</button>
-                            <button type="button" class="btn btn-xs btn-default" id="aacr2-ai-panel-refresh">Refresh</button>
-                            <button type="button" class="btn btn-xs btn-warning" id="aacr2-ai-panel-cancel" disabled>Cancel</button>
-                            <button type="button" class="btn btn-xs btn-default" id="aacr2-ai-panel-close">Close</button>
+                            <button type="button" class="btn btn-xs aacr2-btn-yellow" id="aacr2-ai-panel-minimize">Minimize</button>
+                            <button type="button" class="btn btn-xs aacr2-btn-yellow" id="aacr2-ai-panel-refresh">Refresh</button>
+                            <button type="button" class="btn btn-xs aacr2-btn-danger" id="aacr2-ai-panel-close">Close</button>
                         </div>
                     </header>
                     <div class="body">
@@ -550,10 +749,13 @@
                                 <label><input type="checkbox" id="aacr2-ai-opt-classification"> Classification number</label>
                                 <label><input type="checkbox" id="aacr2-ai-opt-subjects"> Subject headings</label>
                             </div>
-                            <div id="aacr2-ai-cataloging-status" class="aacr2-guide-status info" style="margin-top: 6px;"></div>
+                            <div class="aacr2-ai-status-row">
+                                <div id="aacr2-ai-cataloging-status" class="aacr2-status-text info"></div>
+                                <button type="button" class="btn btn-xs aacr2-btn-danger" id="aacr2-ai-cancel-cataloging" style="display:none;">Cancel</button>
+                            </div>
                             <div class="actions">
                                 ${settings.aiPayloadPreview ? '<button type="button" class="btn btn-xs btn-default" id="aacr2-ai-cataloging-preview">Preview</button>' : ''}
-                                <button type="button" class="btn btn-xs btn-info" id="aacr2-ai-run-cataloging">Suggest classification &amp; subjects</button>
+                                <button type="button" class="btn btn-xs btn-primary" id="aacr2-ai-run-cataloging">Suggest classification &amp; subjects</button>
                             </div>
                             <div class="aacr2-ai-results">
                                 <div class="meta">Classification (LC): <span id="aacr2-ai-classification">(none)</span></div>
@@ -577,6 +779,7 @@
                                 <label for="aacr2-ai-classification-input">Manual classification number</label>
                                 <div class="aacr2-ai-inline">
                                     <input type="text" id="aacr2-ai-classification-input" class="form-control input-sm" placeholder="Enter classification"/>
+                                    <button type="button" class="btn btn-xs btn-primary" id="aacr2-ai-use-suggested-class">Apply</button>
                                 </div>
                                 <div class="meta" style="margin-top: 6px;">Collection prefix:</div>
                                 <div class="aacr2-ai-prefix-options">
@@ -590,12 +793,22 @@
                                     <label><input type="radio" name="aacr2-ai-prefix-type" value="Microform"/> Microform</label>
                                     <label><input type="radio" name="aacr2-ai-prefix-type" value="Music"/> Music</label>
                                 </div>
+                                <div class="actions" style="justify-content:flex-start; margin-top:6px;">
+                                    <label style="font-weight: normal;">
+                                        <input type="checkbox" id="aacr2-ai-apply-942-parts"/>
+                                        Also apply to 942$h (classification), 942$i (cutter/year), and 942$m (prefix)
+                                    </label>
+                                </div>
                                 <div id="aacr2-ai-classification-error" class="aacr2-ai-error" style="display:none;"></div>
-                                <div class="meta">Derived cutter: <span id="aacr2-ai-cutter">(n/a)</span></div>
-                                <div class="meta">Publication year: <span id="aacr2-ai-year">(n/a)</span></div>
-                                <div class="meta">Call number preview: <span id="aacr2-ai-callnumber-preview">(waiting for classification)</span></div>
+                                <div class="aacr2-ai-callnumber-hints">
+                                    <div class="meta">Derived cutter: <span id="aacr2-ai-cutter">(n/a)</span></div>
+                                    <div class="meta">Publication year: <span id="aacr2-ai-year">(n/a)</span></div>
+                                    <div class="meta">Call number preview: <span id="aacr2-ai-callnumber-preview">(waiting for classification)</span></div>
+                                </div>
                                 <div class="actions">
                                     <button type="button" class="btn btn-xs btn-primary" id="aacr2-ai-apply-callnumber">Apply call number</button>
+                                    <button type="button" class="btn btn-xs aacr2-btn-yellow" id="aacr2-ai-undo-callnumber">Undo</button>
+                                    <button type="button" class="btn btn-xs aacr2-btn-yellow" id="aacr2-ai-redo-callnumber">Redo</button>
                                 </div>
                             </div>
                         </div>
@@ -608,10 +821,13 @@
                             <div class="options">
                                 <label><input type="checkbox" id="aacr2-ai-opt-punctuation"> Include rationale (may be slower)</label>
                             </div>
-                            <div id="aacr2-ai-status" class="aacr2-guide-status info" style="margin-top: 8px;"></div>
+                            <div class="aacr2-ai-status-row" style="margin-top: 8px;">
+                                <div id="aacr2-ai-status" class="aacr2-status-text info"></div>
+                                <button type="button" class="btn btn-xs aacr2-btn-danger" id="aacr2-ai-cancel-punctuation" style="display:none;">Cancel</button>
+                            </div>
                             <div class="actions">
                                 ${settings.aiPayloadPreview ? '<button type="button" class="btn btn-xs btn-default" id="aacr2-ai-panel-preview">Preview</button>' : ''}
-                                <button type="button" class="btn btn-xs btn-info" id="aacr2-ai-panel-run">Run rules &amp; punctuation suggestions</button>
+                                <button type="button" class="btn btn-xs btn-primary" id="aacr2-ai-panel-run">Run rules &amp; punctuation suggestions</button>
                             </div>
                             <div class="aacr2-ai-results" id="aacr2-ai-punctuation-results">
                                 <div class="meta" id="aacr2-ai-punctuation-summary">No rules or punctuation suggestions yet.</div>
@@ -643,13 +859,19 @@
                 updateAiPanelSelection($panel, settings, state);
                 updateAiCatalogingContext($panel, settings, state);
             });
-            $panel.find('#aacr2-ai-panel-cancel').on('click', () => {
-                const cancelledPunct = cancelAiRequest(state, 'punctuation', 'Cancelled.', false);
-                const cancelledCatalog = cancelAiRequest(state, 'cataloging', 'Cancelled.', false);
-                if (cancelledPunct) updateAiPanelStatus($panel, 'Cancelled.', 'warning');
-                if (cancelledCatalog) updateAiCatalogingStatus($panel, 'Cancelled.', 'warning');
+            $panel.find('#aacr2-ai-cancel-punctuation').on('click', () => {
+                const cancelled = cancelAiRequest(state, 'punctuation', 'Cancelled.', false);
+                if (cancelled) updateAiPanelStatus($panel, 'Cancelled.', 'warning');
+            });
+            $panel.find('#aacr2-ai-cancel-cataloging').on('click', () => {
+                const cancelled = cancelAiRequest(state, 'cataloging', 'Cancelled.', false);
+                if (cancelled) updateAiCatalogingStatus($panel, 'Cancelled.', 'warning');
             });
             $panel.find('#aacr2-ai-panel-run').on('click', async function() {
+                if (!isInternFeatureAllowed(state, 'aiPunctuation')) {
+                    toast('warning', 'AI punctuation requests are disabled for this internship profile.');
+                    return;
+                }
                 const $button = $(this);
                 const selection = updateAiPanelSelection($panel, settings, state);
                 const element = selection.element;
@@ -670,6 +892,10 @@
                 }
             });
             $panel.find('#aacr2-ai-run-cataloging').on('click', async function() {
+                if (!isInternFeatureAllowed(state, 'aiCataloging')) {
+                    toast('warning', 'AI cataloging requests are disabled for this internship profile.');
+                    return;
+                }
                 const $button = $(this);
                 const features = {
                     punctuation_explain: false,
@@ -751,6 +977,26 @@
             $panel.find('#aacr2-ai-classification-input').on('input', function() {
                 updateAiCatalogingContext($panel, settings, state);
             });
+            $panel.find('#aacr2-ai-use-suggested-class').on('click', function() {
+                if (!isInternFeatureAllowed(state, 'aiApplyActions') || (state && state.readOnly)) {
+                    toast('warning', 'AI apply actions are disabled in internship mode.');
+                    return;
+                }
+                const manualValue = ($panel.find('#aacr2-ai-classification-input').val() || '').toString().trim();
+                if (manualValue) {
+                    updateAiCatalogingContext($panel, settings, state);
+                    toast('info', 'Manual classification retained.');
+                    return;
+                }
+                const suggested = state && state.aiSuggestions ? (state.aiSuggestions.classification || '') : '';
+                if (!suggested) {
+                    toast('info', 'No suggested classification is available yet.');
+                    return;
+                }
+                $panel.find('#aacr2-ai-classification-input').val(suggested);
+                updateAiCatalogingContext($panel, settings, state);
+                toast('info', 'Suggested classification applied.');
+            });
             $panel.find('input[name="aacr2-ai-prefix-type"]').on('change', function() {
                 updateAiCatalogingContext($panel, settings, state);
             });
@@ -758,6 +1004,10 @@
                 updateAiCatalogingContext($panel, settings, state);
             });
             $panel.find('#aacr2-ai-apply-callnumber').on('click', function() {
+                if (!isInternFeatureAllowed(state, 'aiApplyActions') || (state && state.readOnly)) {
+                    toast('warning', 'AI apply actions are disabled in internship mode.');
+                    return;
+                }
                 const info = updateAiCatalogingContext($panel, settings, state);
                 const inputValue = $panel.find('#aacr2-ai-classification-input').val() || '';
                 const suggestionValue = state && state.aiSuggestions ? state.aiSuggestions.classification || '' : '';
@@ -775,18 +1025,99 @@
                     toast('warning', 'No call number field (050$a/090$a) found on this form.');
                     return;
                 }
-                target.$field.val(info.callNumber);
-                target.$field.trigger('change');
+                const targetMeta = parseFieldMeta(target.$field[0]) || { occurrence: '' };
+                const targetCode = ((target && target.code) || 'a').toLowerCase();
+                const classValue = (info.classSegment || '').trim();
+                const cutterValue = (info.cutterSegment || '').trim();
+                const rawClassValue = (info.classification || '').trim();
+                const prefixValue = (info.prefix || '').trim();
+                const $classField = (targetCode === 'a')
+                    ? target.$field
+                    : ensureSubfieldInput(target.tag, targetMeta.occurrence || '', targetCode);
+                if (!$classField || !$classField.length) {
+                    toast('warning', `Unable to locate ${target.tag}$${targetCode} on this form.`);
+                    return;
+                }
+                const classMeta = parseFieldMeta($classField[0]) || { occurrence: targetMeta.occurrence || '' };
+                const classTarget = { tag: target.tag, code: targetCode, occurrence: classMeta.occurrence || '' };
+                setSubfieldValueWithUndo($classField, classTarget, classValue, state);
+                const $cutterField = ensureSubfieldInput(target.tag, targetMeta.occurrence || '', 'b');
+                const hasCutterField = !!($cutterField && $cutterField.length);
+                if (hasCutterField) {
+                    const cutterMeta = parseFieldMeta($cutterField[0]) || { occurrence: targetMeta.occurrence || '' };
+                    const cutterTarget = { tag: target.tag, code: 'b', occurrence: cutterMeta.occurrence || '' };
+                    setSubfieldValueWithUndo($cutterField, cutterTarget, cutterValue, state);
+                }
+                let mirror942Applied = false;
+                if (apply942PartsEnabled($panel)) {
+                    const occ942 = resolveTagOccurrence('942', ['c', 'a', 'h', 'i', 'm']);
+                    const apply942Part = (code, value) => {
+                        const $field942 = ensureSubfieldInputFlexible('942', occ942, code);
+                        if (!$field942 || !$field942.length) return false;
+                        const meta942 = parseFieldMeta($field942[0]) || { occurrence: occ942 };
+                        return setSubfieldValueWithUndo(
+                            $field942,
+                            { tag: '942', code, occurrence: meta942.occurrence || occ942 || '' },
+                            value,
+                            state
+                        );
+                    };
+                    if (apply942Part('h', rawClassValue)) mirror942Applied = true;
+                    if (apply942Part('i', cutterValue)) mirror942Applied = true;
+                    if (apply942Part('m', prefixValue)) mirror942Applied = true;
+                }
+                storePendingItemCallNumber(info.callNumber || '');
                 const hasCutter = !!info.cutter;
-                const message = hasCutter
-                    ? `Call number applied to ${target.tag}$${target.code}: ${info.callNumber}.`
-                    : `Call number applied to ${target.tag}$${target.code}: ${info.callNumber}. Cutter-Sanborn match not found; review the cutter.`;
-                toast(hasCutter ? 'info' : 'warning', message);
+                let message = `Call number applied: ${target.tag}$${targetCode}="${classValue}"`;
+                message += hasCutterField ? `, ${target.tag}$b="${cutterValue}".` : '.';
+                if (!hasCutterField) {
+                    message += ` Unable to locate/create ${target.tag}$b.`;
+                } else if (!hasCutter) {
+                    message += ' Cutter-Sanborn match not found; review the cutter.';
+                }
+                if (apply942PartsEnabled($panel)) {
+                    message += mirror942Applied
+                        ? ' Mirrored to 942$h/$i/$m.'
+                        : ' 942 mirror selected, but no editable 942 field was found.';
+                }
+                toast((hasCutter && hasCutterField) ? 'info' : 'warning', message);
+            });
+            $panel.find('#aacr2-ai-undo-callnumber').on('click', function() {
+                undoLastChange();
+                updateAiCatalogingContext($panel, settings, state);
+            });
+            $panel.find('#aacr2-ai-redo-callnumber').on('click', function() {
+                redoLastChange();
+                updateAiCatalogingContext($panel, settings, state);
             });
             $panel.on('click', '.aacr2-ai-subject-apply', function() {
+                if (!isInternFeatureAllowed(state, 'aiApplyActions') || (state && state.readOnly)) {
+                    toast('warning', 'AI apply actions are disabled in internship mode.');
+                    return;
+                }
                 const index = Number($(this).attr('data-index'));
                 applyAiSubjectByIndex(settings, state, index);
                 updateAiCatalogingContext($panel, settings, state);
+            });
+            $panel.on('click', '.aacr2-ai-subject-undo', function() {
+                if (!isInternFeatureAllowed(state, 'aiApplyActions') || (state && state.readOnly)) {
+                    toast('warning', 'AI apply actions are disabled in internship mode.');
+                    return;
+                }
+                const index = Number($(this).attr('data-index'));
+                if (undoAiSubjectApplyByIndex(settings, state, index)) {
+                    updateAiCatalogingContext($panel, settings, state);
+                }
+            });
+            $panel.on('click', '.aacr2-ai-subject-redo', function() {
+                if (!isInternFeatureAllowed(state, 'aiApplyActions') || (state && state.readOnly)) {
+                    toast('warning', 'AI apply actions are disabled in internship mode.');
+                    return;
+                }
+                const index = Number($(this).attr('data-index'));
+                if (redoAiSubjectApplyByIndex(settings, state, index)) {
+                    updateAiCatalogingContext($panel, settings, state);
+                }
             });
             $panel.find('#aacr2-ai-apply-selected').on('click', () => {
                 applySelectedAiPatches(state);
@@ -795,20 +1126,23 @@
                 applyAllAiPatches(state);
             });
         }
+        const aiCatalogingAllowed = isInternFeatureAllowed(state, 'aiCataloging');
+        const aiPunctuationAllowed = isInternFeatureAllowed(state, 'aiPunctuation');
         $panel.find('#aacr2-ai-opt-punctuation')
-            .prop('checked', !!settings.aiPunctuationExplain)
-            .prop('disabled', !settings.aiPunctuationExplain);
+            .prop('checked', !!(settings.aiPunctuationExplain && aiPunctuationAllowed))
+            .prop('disabled', !settings.aiPunctuationExplain || !aiPunctuationAllowed);
         $panel.find('#aacr2-ai-opt-classification')
-            .prop('checked', !!settings.aiCallNumberGuidance)
-            .prop('disabled', !settings.aiCallNumberGuidance);
+            .prop('checked', !!(settings.aiCallNumberGuidance && aiCatalogingAllowed))
+            .prop('disabled', !settings.aiCallNumberGuidance || !aiCatalogingAllowed);
         $panel.find('#aacr2-ai-opt-subjects')
-            .prop('checked', !!settings.aiSubjectGuidance)
-            .prop('disabled', !settings.aiSubjectGuidance);
+            .prop('checked', !!(settings.aiSubjectGuidance && aiCatalogingAllowed))
+            .prop('disabled', !settings.aiSubjectGuidance || !aiCatalogingAllowed);
         updateAiPanelSelection($panel, settings, state);
         updateAiCatalogingContext($panel, settings, state);
         applyStoredAiStatus($panel, state);
         updateAiCancelButtonState(state);
         $panel.show();
+        recoverFloatingPanel($panel, { minWidth: 320, minHeight: 220, right: 24, bottom: 24, buttonSelector: '#aacr2-ai-panel-minimize' });
         if (state) state.aiPanelOpen = true;
         updateAiToggleButton();
     }
@@ -835,6 +1169,12 @@
 
     async function requestAiAssist(settings, state, options) {
         const opts = options || {};
+        if (!isInternFeatureAllowed(state, 'aiPunctuation')) {
+            const denied = 'AI punctuation requests are disabled for this internship profile.';
+            toast('warning', denied);
+            if (typeof opts.onStatus === 'function') opts.onStatus(denied, 'error');
+            return;
+        }
         const active = opts.element || resolveAiTargetElement(state);
         const meta = active ? parseFieldMeta(active) : null;
         const onStatus = typeof opts.onStatus === 'function' ? opts.onStatus : null;

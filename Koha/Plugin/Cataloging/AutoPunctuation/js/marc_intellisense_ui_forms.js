@@ -827,6 +827,7 @@
         recordUndo(record, previous, patch.value);
         $field.val(patch.value);
         $field.trigger('change');
+        $field.trigger('input');
         const conditionToast = buildConditionalSuffixToast(finding);
         if (conditionToast) {
             toast('info', conditionToast);
@@ -860,6 +861,7 @@
         recordUndo(record, previous, nextValue);
         $field.val(nextValue);
         $field.trigger('change');
+        $field.trigger('input');
         const conditionToast = buildConditionalSuffixToast(finding);
         if (conditionToast) {
             toast('info', conditionToast);
@@ -869,9 +871,12 @@
     function recordUndo(target, previousValue, nextValue) {
         const state = global.AACR2IntellisenseState;
         if (!state) return;
+        if (state.redoStack) state.redoStack = [];
         state.undoStack.push({
+            kind: target.kind || 'subfield',
             tag: target.tag,
             code: target.code,
+            indicator: target.indicator,
             occurrence: target.occurrence || '',
             previous: previousValue,
             next: nextValue
@@ -909,7 +914,7 @@
                 total++;
                 const hasTarget = alert && alert.tag && alert.subfield;
                 const action = hasTarget
-                    ? `<button type="button" class="btn btn-xs btn-default" data-tag="${alert.tag}" data-sub="${alert.subfield}">Go to field</button>`
+                    ? `<button type="button" class="btn btn-xs aacr2-btn-yellow" data-tag="${alert.tag}" data-sub="${alert.subfield}">Go to field</button>`
                     : '';
                 const item = $(`
                     <div class="finding warning">
@@ -938,7 +943,7 @@
                         <div><strong>${label}</strong> · WARNING</div>
                         <div class="meta">Required AACR2 field is missing.</div>
                         <div class="actions">
-                            <button type="button" class="btn btn-xs btn-default" data-tag="${tag}" data-sub="${sub}">Go to field</button>
+                            <button type="button" class="btn btn-xs aacr2-btn-yellow" data-tag="${tag}" data-sub="${sub}">Go to field</button>
                         </div>
                     </div>
                 `);
@@ -979,9 +984,9 @@
                         ${preview}
                         ${rawHtml}
                         <div class="actions">
-                            <button type="button" class="btn btn-xs btn-default aacr2-go-field" data-tag="${finding.tag}" data-sub="${finding.subfield}" data-occ="${normalizeOccurrenceKey(finding.occurrence)}">Go to field</button>
+                            <button type="button" class="btn btn-xs aacr2-btn-yellow aacr2-go-field" data-tag="${finding.tag}" data-sub="${finding.subfield}" data-occ="${normalizeOccurrenceKey(finding.occurrence)}">Go to field</button>
                             <button type="button" class="btn btn-xs btn-primary aacr2-apply" ${applyAttr}>Apply</button>
-                            <button type="button" class="btn btn-xs btn-default aacr2-ignore">Ignore</button>
+                            <button type="button" class="btn btn-xs aacr2-btn-danger aacr2-ignore">Ignore</button>
                         </div>
                     </div>
                 `);

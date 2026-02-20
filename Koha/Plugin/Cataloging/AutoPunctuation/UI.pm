@@ -7,6 +7,13 @@ use JSON qw(to_json from_json);
 use Try::Tiny;
 use Koha::Plugin::Cataloging::AutoPunctuation::AI::Prompt ();
 
+sub _display_last_updated {
+    my ($self, $raw_value) = @_;
+    my $value = defined $raw_value ? "$raw_value" : '';
+    $value =~ s/^\s+|\s+$//g;
+    return $value;
+}
+
 sub tool {
     my ( $self, $args ) = @_;
     my $cgi = $self->{'cgi'} || CGI->new;
@@ -14,6 +21,7 @@ sub tool {
     my $settings = $self->_load_settings();
     my $update_info = $self->_check_for_updates();
     my $template_settings = { %{$settings} };
+    $template_settings->{last_updated} = _display_last_updated($self, $settings->{last_updated});
     $template_settings->{llm_api_key} = '';
     $template_settings->{openrouter_api_key} = '';
     my $llm_api_key_set = $self->_secret_present($settings->{llm_api_key});
@@ -21,12 +29,8 @@ sub tool {
     my $ai_provider_raw = $settings->{llm_api_provider} || 'OpenRouter';
     my $ai_provider = $ai_provider_raw =~ /openrouter/i ? 'OpenRouter' : 'OpenAI';
     my $ai_model = $self->_selected_model($settings) || '';
-    my $ai_request_mode = $settings->{ai_request_mode} || 'server';
-    $ai_request_mode = lc($ai_request_mode || '');
-    $ai_request_mode = 'direct' if $ai_request_mode eq 'browser';
-    $ai_request_mode = 'server' unless $ai_request_mode =~ /^(server|direct)$/;
     my $ai_server_key_available = $self->_ai_key_available($settings) ? 1 : 0;
-    my $ai_ready = ($settings->{ai_enable} && ($ai_request_mode eq 'direct' ? 1 : $ai_server_key_available)) ? 1 : 0;
+    my $ai_ready = ($settings->{ai_enable} && $ai_server_key_available) ? 1 : 0;
     $template->param(
         settings => $template_settings,
         update_info => $update_info,
@@ -40,7 +44,6 @@ sub tool {
         ai_provider_is_openrouter => ($ai_provider eq 'OpenRouter') ? 1 : 0,
         ai_model => $ai_model,
         ai_ready => $ai_ready,
-        ai_request_mode => $ai_request_mode,
         ai_server_key_available => $ai_server_key_available,
         CLASS    => ref($self),
     );
@@ -61,6 +64,7 @@ sub configure {
     my $prompt_defaults = Koha::Plugin::Cataloging::AutoPunctuation::AI::Prompt::_default_ai_prompt_templates();
     my $prompt_max_length = $defaults->{ai_prompt_max_length} || 16384;
     my $settings = { %{$defaults}, %{$stored_settings} };
+    delete $settings->{ai_request_mode};
     my $saved_successfully = 0;
     my @save_errors;
 
@@ -80,10 +84,18 @@ sub configure {
         $settings->{internship_mode} = $cgi->param('internship_mode') ? 1 : 0;
         $settings->{internship_users} = join(',', $cgi->multi_param('internship_users')) || '';
         $settings->{internship_exclusion_list} = $cgi->param('internship_exclusion_list') || '';
+        $settings->{intern_allow_assistant_toggle} = $cgi->param('intern_allow_assistant_toggle') ? 1 : 0;
+        $settings->{intern_allow_autoapply_toggle} = $cgi->param('intern_allow_autoapply_toggle') ? 1 : 0;
+        $settings->{intern_allow_cataloging_panel} = $cgi->param('intern_allow_cataloging_panel') ? 1 : 0;
+        $settings->{intern_allow_ai_assist_toggle} = $cgi->param('intern_allow_ai_assist_toggle') ? 1 : 0;
+        $settings->{intern_allow_panel_apply_actions} = $cgi->param('intern_allow_panel_apply_actions') ? 1 : 0;
+        $settings->{intern_allow_ai_cataloging} = $cgi->param('intern_allow_ai_cataloging') ? 1 : 0;
+        $settings->{intern_allow_ai_punctuation} = $cgi->param('intern_allow_ai_punctuation') ? 1 : 0;
+        $settings->{intern_allow_ai_apply_actions} = $cgi->param('intern_allow_ai_apply_actions') ? 1 : 0;
         $settings->{enforce_aacr2_guardrails} = $cgi->param('enforce_aacr2_guardrails') ? 1 : 0;
         $settings->{enable_live_validation} = $cgi->param('enable_live_validation') ? 1 : 0;
         $settings->{block_save_on_error} = $cgi->param('block_save_on_error') ? 1 : 0;
-        $settings->{required_fields} = $cgi->param('required_fields') || '100a,245a,260c,300a,050a';
+        $settings->{required_fields} = $cgi->param('required_fields') || '0030,0080,040c,942c,100a,245a,260c,300a,050a';
         $settings->{excluded_tags} = $cgi->param('excluded_tags') || '';
         $settings->{strict_coverage_mode} = $cgi->param('strict_coverage_mode') ? 1 : 0;
         $settings->{enable_local_fields} = $cgi->param('enable_local_fields') ? 1 : 0;
@@ -126,7 +138,6 @@ sub configure {
             $settings->{ai_prompt_cataloging} = $prompt_cataloging;
         }
         $settings->{ai_prompt_max_length} = $prompt_max_length;
-        $settings->{ai_strict_json_mode} = $cgi->param('ai_strict_json_mode') ? 1 : 0;
         $settings->{ai_payload_preview} = $cgi->param('ai_payload_preview') ? 1 : 0;
         $settings->{ai_openrouter_response_format} = 0;
         $settings->{ai_rate_limit_per_minute} = $cgi->param('ai_rate_limit_per_minute') || $settings->{ai_rate_limit_per_minute};
@@ -140,16 +151,11 @@ sub configure {
         $settings->{ai_circuit_breaker_min_samples} = $cgi->param('ai_circuit_breaker_min_samples') || $settings->{ai_circuit_breaker_min_samples};
         $settings->{ai_confidence_threshold} = defined $cgi->param('ai_confidence_threshold') ? $cgi->param('ai_confidence_threshold') : $settings->{ai_confidence_threshold};
         $settings->{lc_class_target} = $cgi->param('lc_class_target') || $settings->{lc_class_target} || '050$a';
-        my $request_mode = $cgi->param('ai_request_mode') || $settings->{ai_request_mode} || 'server';
-        $request_mode = lc($request_mode || '');
-        $request_mode = 'direct' if $request_mode eq 'browser';
-        $request_mode = 'server' unless $request_mode =~ /^(server|direct)$/;
-        $settings->{ai_request_mode} = $request_mode;
         $settings->{llm_api_provider} = $cgi->param('llm_api_provider') || 'OpenRouter';
         my $provider = lc($settings->{llm_api_provider} || 'openrouter');
         my $unified_key = $cgi->param('ai_api_key');
         my $unified_clear = $cgi->param('ai_api_key_clear');
-        my $allow_server_key_updates = $request_mode eq 'server' ? 1 : 0;
+        my $allow_server_key_updates = 1;
         if ($allow_server_key_updates && (defined $unified_key || $unified_clear)) {
             my $target_key = $provider eq 'openrouter' ? 'openrouter_api_key' : 'llm_api_key';
             if ($unified_clear) {
@@ -249,6 +255,7 @@ sub configure {
 
         if (!@save_errors) {
             $settings->{last_updated} = Koha::DateUtils::dt_from_string()->strftime('%Y-%m-%d %H:%M:%S');
+            delete $settings->{ai_request_mode};
             $self->store_data({ settings => to_json($settings) });
             $saved_successfully = 1;
         }
@@ -277,6 +284,7 @@ sub configure {
         };
     }
     my $template_settings = { %{$settings} };
+    $template_settings->{last_updated} = _display_last_updated($self, $settings->{last_updated});
     $template_settings->{llm_api_key} = '';
     $template_settings->{openrouter_api_key} = '';
     my $llm_api_key_set = $self->_secret_present($settings->{llm_api_key});
@@ -303,12 +311,10 @@ sub configure {
         fallback => $settings->{ai_model} || ''
     });
     $model_defaults_json =~ s{</}{<\\/}g;
-    my $prompt_defaults_plain = Koha::Plugin::Cataloging::AutoPunctuation::AI::Prompt::_default_ai_prompt_templates_for_mode($self, 0);
-    my $prompt_defaults_strict = Koha::Plugin::Cataloging::AutoPunctuation::AI::Prompt::_default_ai_prompt_templates_for_mode($self, 1);
-    my $active_prompt_defaults = $settings->{ai_strict_json_mode} ? $prompt_defaults_strict : $prompt_defaults_plain;
+    my $prompt_defaults_plain = Koha::Plugin::Cataloging::AutoPunctuation::AI::Prompt::_default_ai_prompt_templates_for_mode($self);
+    my $active_prompt_defaults = $prompt_defaults_plain;
     my $prompt_defaults_json = to_json({
         plain => $prompt_defaults_plain || {},
-        strict_json => $prompt_defaults_strict || {},
         active => $active_prompt_defaults || {}
     });
     $prompt_defaults_json =~ s{</}{<\\/}g;
@@ -402,11 +408,7 @@ sub intranet_js {
         };
         my $schemas_json = to_json($schemas);
         $schemas_json =~ s{</}{<\\/}g;
-        my $ai_request_mode = $settings->{ai_request_mode} || 'server';
-        $ai_request_mode = lc($ai_request_mode || '');
-        $ai_request_mode = 'direct' if $ai_request_mode eq 'browser';
-        $ai_request_mode = 'server' unless $ai_request_mode =~ /^(server|direct)$/;
-        my $ai_configured = ($settings->{ai_enable} && ($ai_request_mode eq 'direct' ? 1 : $self->_ai_key_available($settings))) ? 1 : 0;
+        my $ai_configured = ($settings->{ai_enable} && $self->_ai_key_available($settings)) ? 1 : 0;
         my $csrf_token = '';
         try {
             my $session_id = $self->_session_id();
@@ -439,6 +441,14 @@ sub intranet_js {
             internshipMode => $settings->{internship_mode} ? JSON::true : JSON::false,
             internshipUsers => $settings->{internship_users} || '',
             internshipExclusionList => $settings->{internship_exclusion_list} || '',
+            internAllowAssistantToggle => $settings->{intern_allow_assistant_toggle} ? JSON::true : JSON::false,
+            internAllowAutoapplyToggle => $settings->{intern_allow_autoapply_toggle} ? JSON::true : JSON::false,
+            internAllowCatalogingPanel => $settings->{intern_allow_cataloging_panel} ? JSON::true : JSON::false,
+            internAllowAiAssistToggle => $settings->{intern_allow_ai_assist_toggle} ? JSON::true : JSON::false,
+            internAllowPanelApplyActions => $settings->{intern_allow_panel_apply_actions} ? JSON::true : JSON::false,
+            internAllowAiCataloging => $settings->{intern_allow_ai_cataloging} ? JSON::true : JSON::false,
+            internAllowAiPunctuation => $settings->{intern_allow_ai_punctuation} ? JSON::true : JSON::false,
+            internAllowAiApplyActions => $settings->{intern_allow_ai_apply_actions} ? JSON::true : JSON::false,
             enforceAacr2Guardrails => $settings->{enforce_aacr2_guardrails} ? JSON::true : JSON::false,
             enableLiveValidation => $settings->{enable_live_validation} ? JSON::true : JSON::false,
             blockSaveOnError => $settings->{block_save_on_error} ? JSON::true : JSON::false,
@@ -467,13 +477,11 @@ sub intranet_js {
             aiTemperature => defined $settings->{ai_temperature} ? ($settings->{ai_temperature} + 0) : 0,
             aiReasoningEffort => $settings->{ai_reasoning_effort} || 'low',
             aiRetryCount => $settings->{ai_retry_count} || 1,
-            aiStrictJsonMode => $settings->{ai_strict_json_mode} ? JSON::true : JSON::false,
-            aiRequestMode => $ai_request_mode,
             lcClassTarget => $settings->{lc_class_target} || '050$a',
             pluginRepoUrl => $Koha::Plugin::Cataloging::AutoPunctuation::PLUGIN_REPO_URL,
             frameworkCode => $frameworkcode,
             frameworkFields => $framework_fields,
-            last_updated => $settings->{last_updated} || '',
+            last_updated => _display_last_updated($self, $settings->{last_updated}),
             currentUserId => $current_user_id,
             pluginClass => ref($self),
             pluginRunPath => '/cgi-bin/koha/plugins/run.pl',

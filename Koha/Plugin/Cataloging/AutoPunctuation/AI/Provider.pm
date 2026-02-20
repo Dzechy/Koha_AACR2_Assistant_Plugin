@@ -44,12 +44,9 @@ sub _call_openai_responses {
     my $ua = LWP::UserAgent->new(timeout => $settings->{ai_timeout} || 60);
     my $model = $self->_selected_model($settings);
     return { error => 'OpenAI model not configured.' } unless $model;
-    my $expect_json = $options && exists $options->{expect_json} ? ($options->{expect_json} ? 1 : 0) : 1;
     my $system_prompt = $options && $options->{system_prompt}
         ? $options->{system_prompt}
-        : ($expect_json
-            ? 'You are an AACR2 MARC21 cataloging assistant. Use AACR2/ISBD conventions only. Return JSON only.'
-            : 'You are an AACR2 MARC21 cataloging assistant. Use AACR2/ISBD conventions only. Return plain text only.');
+        : 'You are an AACR2 MARC21 cataloging assistant. Use AACR2/ISBD conventions only. Return plain text only.';
     my $payload = {
         model => $model,
         input => [
@@ -99,19 +96,8 @@ sub _call_openai_responses {
             my $content = $self->_extract_response_text($result);
             my $truncated = $self->_response_truncated($result);
             warn "AACR2 AI response length: " . length($content) if $settings->{debug_mode};
-            return { error => 'OpenAI response was empty. Retry once. If this persists, reduce reasoning effort or disable strict JSON mode for this model.' } unless $content;
-            if (!$expect_json) {
-                return { raw_text => $content, text_mode => 1, raw_response => $raw_body, truncated => $truncated };
-            }
-            my $parsed = $self->_try_parse_json_text($content);
-            return {
-                error => 'OpenAI response was not valid JSON.',
-                raw_text => $content,
-                raw_response => $raw_body,
-                parse_error => 'Unable to parse JSON from model output.',
-                truncated => $truncated
-            } unless $parsed;
-            return { data => $parsed, raw_text => $content, raw_response => $raw_body, truncated => $truncated };
+            return { error => 'OpenAI response was empty. Retry once. If this persists, reduce reasoning effort or max output tokens for this model.' } unless $content;
+            return { raw_text => $content, text_mode => 1, raw_response => $raw_body, truncated => $truncated };
         }
         if ($attempt < $attempts) {
             usleep($backoff);
@@ -130,12 +116,9 @@ sub _call_openrouter_responses {
     my $ua = LWP::UserAgent->new(timeout => $settings->{ai_timeout} || 60);
     my $model = $self->_selected_model($settings);
     return { error => 'OpenRouter model not configured.' } unless $model;
-    my $expect_json = $options && exists $options->{expect_json} ? ($options->{expect_json} ? 1 : 0) : 1;
     my $system_prompt = $options && $options->{system_prompt}
         ? $options->{system_prompt}
-        : ($expect_json
-            ? 'You are an AACR2 MARC21 cataloging assistant. Use AACR2/ISBD conventions only. Return JSON only.'
-            : 'You are an AACR2 MARC21 cataloging assistant. Use AACR2/ISBD conventions only. Return plain text only.');
+        : 'You are an AACR2 MARC21 cataloging assistant. Use AACR2/ISBD conventions only. Return plain text only.';
     my $payload = {
         input => [
             {
@@ -183,19 +166,8 @@ sub _call_openrouter_responses {
             my $content = $self->_extract_response_text($result);
             my $truncated = $self->_response_truncated($result);
             warn "AACR2 OpenRouter response length: " . length($content) if $settings->{debug_mode};
-            return { error => 'OpenRouter response was empty. Retry once. If this persists, reduce reasoning effort or disable strict JSON mode for this model.' } unless $content;
-            if (!$expect_json) {
-                return { raw_text => $content, text_mode => 1, raw_response => $raw_body, truncated => $truncated };
-            }
-            my $parsed = $self->_try_parse_json_text($content);
-            return {
-                error => 'OpenRouter response was not valid JSON.',
-                raw_text => $content,
-                raw_response => $raw_body,
-                parse_error => 'Unable to parse JSON from model output.',
-                truncated => $truncated
-            } unless $parsed;
-            return { data => $parsed, raw_text => $content, raw_response => $raw_body, truncated => $truncated };
+            return { error => 'OpenRouter response was empty. Retry once. If this persists, reduce reasoning effort or max output tokens for this model.' } unless $content;
+            return { raw_text => $content, text_mode => 1, raw_response => $raw_body, truncated => $truncated };
         }
         if ($attempt < $attempts) {
             usleep($backoff);
@@ -214,12 +186,9 @@ sub _call_openrouter_chat {
     my $ua = LWP::UserAgent->new(timeout => $settings->{ai_timeout} || 60);
     my $model = $self->_selected_model($settings);
     return { error => 'OpenRouter model not configured.' } unless $model;
-    my $expect_json = $options && exists $options->{expect_json} ? ($options->{expect_json} ? 1 : 0) : 1;
     my $system_prompt = $options && $options->{system_prompt}
         ? $options->{system_prompt}
-        : ($expect_json
-            ? 'You are an AACR2 MARC21 cataloging assistant. Use AACR2/ISBD conventions only. Return JSON only.'
-            : 'You are an AACR2 MARC21 cataloging assistant. Use AACR2/ISBD conventions only. Return plain text only.');
+        : 'You are an AACR2 MARC21 cataloging assistant. Use AACR2/ISBD conventions only. Return plain text only.';
     my $payload = {
         messages => [
             {
@@ -265,19 +234,8 @@ sub _call_openrouter_chat {
             my $content = $self->_extract_openrouter_text($result);
             my $truncated = $self->_response_truncated($result);
             warn "AACR2 OpenRouter response length: " . length($content) if $settings->{debug_mode};
-            return { error => 'OpenRouter response was empty. Retry once. If this persists, reduce reasoning effort or disable strict JSON mode for this model.' } unless $content;
-            if (!$expect_json) {
-                return { raw_text => $content, text_mode => 1, raw_response => $raw_body, truncated => $truncated };
-            }
-            my $parsed = $self->_try_parse_json_text($content);
-            return {
-                error => 'OpenRouter response was not valid JSON.',
-                raw_text => $content,
-                raw_response => $raw_body,
-                parse_error => 'Unable to parse JSON from model output.',
-                truncated => $truncated
-            } unless $parsed;
-            return { data => $parsed, raw_text => $content, raw_response => $raw_body, truncated => $truncated };
+            return { error => 'OpenRouter response was empty. Retry once. If this persists, reduce reasoning effort or max output tokens for this model.' } unless $content;
+            return { raw_text => $content, text_mode => 1, raw_response => $raw_body, truncated => $truncated };
         }
         if ($attempt < $attempts) {
             usleep($backoff);

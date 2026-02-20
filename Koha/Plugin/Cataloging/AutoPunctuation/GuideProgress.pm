@@ -191,6 +191,18 @@ sub _sanitize_progress_label {
     return $text;
 }
 
+sub _completion_tier_label {
+    my ($completion_percent) = @_;
+    my $percent = (defined $completion_percent && looks_like_number($completion_percent))
+        ? int($completion_percent)
+        : 0;
+    $percent = 0 if $percent < 0;
+    $percent = 100 if $percent > 100;
+    return 'Tier 1' if $percent <= 33;
+    return 'Tier 2' if $percent <= 66;
+    return 'Tier 3';
+}
+
 sub _normalize_progress_summary {
     my ($self, $summary, $summary_counts, $completed, $skipped) = @_;
     $summary = {} unless $summary && ref $summary eq 'HASH';
@@ -211,7 +223,6 @@ sub _normalize_progress_summary {
     $counts->{total} = $done_count if ($counts->{total} || 0) < $done_count;
 
     my $module_breakdown = _normalize_progress_counter_hash($summary->{module_breakdown});
-    my $tier_breakdown = _normalize_progress_counter_hash($summary->{tier_breakdown});
     my $modules_total = looks_like_number($summary->{modules_total}) ? int($summary->{modules_total}) : 0;
     my $modules_completed = looks_like_number($summary->{modules_completed}) ? int($summary->{modules_completed}) : 0;
 
@@ -248,6 +259,12 @@ sub _normalize_progress_summary {
         defined $summary->{current_tier} ? $summary->{current_tier} : $summary->{tier},
         80
     );
+    if ($current_tier eq '' || $current_tier !~ /^Tier\s*[123]$/i) {
+        $current_tier = _completion_tier_label($completion_percent);
+    } else {
+        my $match = $current_tier =~ /([123])/;
+        $current_tier = $match ? "Tier $1" : _completion_tier_label($completion_percent);
+    }
     my $current_step_key = _sanitize_progress_label($summary->{current_step_key}, 160);
     my $current_step_title = _sanitize_progress_label($summary->{current_step_title}, 240);
 
@@ -265,8 +282,7 @@ sub _normalize_progress_summary {
         current_step_title => $current_step_title,
         modules_total => $modules_total,
         modules_completed => $modules_completed,
-        module_breakdown => $module_breakdown,
-        tier_breakdown => $tier_breakdown
+        module_breakdown => $module_breakdown
     };
 }
 

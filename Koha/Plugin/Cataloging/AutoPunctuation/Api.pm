@@ -11,8 +11,7 @@ sub _ai_prompt_cache_component {
     my ($self, $settings, $mode) = @_;
     $settings = {} unless $settings && ref $settings eq 'HASH';
     my $prompt_mode = ($mode || '') eq 'cataloging' ? 'cataloging' : 'punctuation';
-    my $strict_json = ($settings->{ai_strict_json_mode} ? 1 : 0);
-    my $defaults = Koha::Plugin::Cataloging::AutoPunctuation::AI::Prompt::_default_ai_prompt_templates_for_mode($self, $strict_json);
+    my $defaults = Koha::Plugin::Cataloging::AutoPunctuation::AI::Prompt::_default_ai_prompt_templates_for_mode($self);
     my $template = $prompt_mode eq 'cataloging'
         ? ($settings->{ai_prompt_cataloging} // '')
         : ($settings->{ai_prompt_default} // '');
@@ -314,25 +313,7 @@ sub ai_suggest {
                 return;
             }
 
-            my $expect_json = $settings->{ai_strict_json_mode} ? 1 : 0;
-            my $provider_result = $self->_call_ai_provider($settings, $prompt, {
-                expect_json => $expect_json
-            });
-            if ($expect_json
-                && $provider_result
-                && ref($provider_result) eq 'HASH'
-                && $provider_result->{error}
-                && $provider_result->{error} =~ /response was empty/i) {
-                my $fallback_result = $self->_call_ai_provider($settings, $prompt, {
-                    expect_json => 0
-                });
-                if ($fallback_result && ref($fallback_result) eq 'HASH' && !$fallback_result->{error}) {
-                    $fallback_result->{parse_error} = 'Strict JSON mode returned empty output; used plain-text fallback.';
-                    $provider_result = $fallback_result;
-                } elsif ($fallback_result && ref($fallback_result) eq 'HASH' && $fallback_result->{error}) {
-                    $provider_result->{error} .= ' Plain-text fallback also failed: ' . $fallback_result->{error};
-                }
-            }
+            my $provider_result = $self->_call_ai_provider($settings, $prompt, {});
             my $raw_text = $provider_result->{raw_text} || '';
             my $was_truncated = $provider_result->{truncated} ? 1 : 0;
             my $debug = _build_ai_debug_payload($self, $settings, $provider_result);
@@ -487,9 +468,7 @@ sub test_connection {
             return;
         }
         my $prompt = "Reply with a short plain-text confirmation.";
-        my $result = $self->_call_ai_provider($settings, $prompt, {
-            expect_json => 0
-        });
+        my $result = $self->_call_ai_provider($settings, $prompt, {});
         if ($result->{error}) {
             $response = { ok => 0, error => $result->{error} };
             $status = '502 Bad Gateway';
