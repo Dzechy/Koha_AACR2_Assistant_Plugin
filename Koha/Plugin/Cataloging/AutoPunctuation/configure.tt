@@ -2470,7 +2470,9 @@
 
         function renderOpenAiModels(selectedId) {
             var filtered = filterOpenAiModels(openAiModels || []);
-            var selected = selectedId || $('#ai_model').val() || modelSelections.openai || '';
+            var selected = (selectedId !== undefined && selectedId !== null)
+                ? selectedId
+                : (modelSelections.openai || '');
             setModelSelect($('#ai_model'), filtered, selected, function(model) {
                 return model.id;
             }, { includeBlank: true });
@@ -2555,7 +2557,9 @@
 
         function renderOpenRouterModels(selectedId) {
             var filtered = filterOpenRouterModels(openRouterModels || []);
-            var selected = selectedId || $('#ai_model').val() || modelSelections.openrouter || '';
+            var selected = (selectedId !== undefined && selectedId !== null)
+                ? selectedId
+                : (modelSelections.openrouter || '');
             setModelSelect($('#ai_model'), filtered, selected, function(model) {
                 var baseLabel = model.name ? (model.name + ' (' + model.id + ')') : model.id;
                 return baseLabel + openRouterModelSearchHints(model);
