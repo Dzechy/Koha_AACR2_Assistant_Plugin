@@ -564,7 +564,7 @@
         return $();
     }
 
-    function setSubfieldValueWithUndo($field, target, nextValue, state) {
+    function setTargetSubfieldValueWithUndo($field, target, nextValue, state) {
         if (!$field || !$field.length || !target) return false;
         const previous = ($field.val() || '').toString();
         const next = (nextValue || '').toString();
@@ -1040,13 +1040,13 @@
                 }
                 const classMeta = parseFieldMeta($classField[0]) || { occurrence: targetMeta.occurrence || '' };
                 const classTarget = { tag: target.tag, code: targetCode, occurrence: classMeta.occurrence || '' };
-                setSubfieldValueWithUndo($classField, classTarget, classValue, state);
+                setTargetSubfieldValueWithUndo($classField, classTarget, classValue, state);
                 const $cutterField = ensureSubfieldInput(target.tag, targetMeta.occurrence || '', 'b');
                 const hasCutterField = !!($cutterField && $cutterField.length);
                 if (hasCutterField) {
                     const cutterMeta = parseFieldMeta($cutterField[0]) || { occurrence: targetMeta.occurrence || '' };
                     const cutterTarget = { tag: target.tag, code: 'b', occurrence: cutterMeta.occurrence || '' };
-                    setSubfieldValueWithUndo($cutterField, cutterTarget, cutterValue, state);
+                    setTargetSubfieldValueWithUndo($cutterField, cutterTarget, cutterValue, state);
                 }
                 let mirror942Applied = false;
                 if (apply942PartsEnabled($panel)) {
@@ -1055,7 +1055,7 @@
                         const $field942 = ensureSubfieldInputFlexible('942', occ942, code);
                         if (!$field942 || !$field942.length) return false;
                         const meta942 = parseFieldMeta($field942[0]) || { occurrence: occ942 };
-                        return setSubfieldValueWithUndo(
+                        return setTargetSubfieldValueWithUndo(
                             $field942,
                             { tag: '942', code, occurrence: meta942.occurrence || occ942 || '' },
                             value,
