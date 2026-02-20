@@ -528,7 +528,7 @@
                                     </li>
                                     <li>
                                         <label for="required_fields">Required AACR2 Fields:</label>
-                                        <input type="text" name="required_fields" id="required_fields" value="[% settings.required_fields || '0030,0080,040c,942c,100a,245a,260c,300a,050a' %]" class="form-control"/>
+                                        <input type="text" name="required_fields" id="required_fields" value="[% settings.required_fields || '0030,0080,040*,040c,942c,100a,245a,260c,300a,050a' %]" class="form-control"/>
                                         <span class="hint">Comma-separated required subfields (example: 100a,245a).</span>
                                     </li>
                                     <li>
@@ -865,7 +865,7 @@
                                     </li>
                                     <li>
                                         <label for="ai_timeout">Timeout (seconds):</label>
-                                        <input type="number" name="ai_timeout" id="ai_timeout" value="[% settings.ai_timeout %]" class="form-control" style="width: 120px;"/>
+                                        <input type="number" name="ai_timeout" id="ai_timeout" value="[% settings.ai_timeout || 600 %]" class="form-control" style="width: 120px;"/>
                                         <span class="hint">Request timeout in seconds.</span>
                                     </li>
                                     <li>

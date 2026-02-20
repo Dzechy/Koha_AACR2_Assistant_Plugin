@@ -146,18 +146,166 @@
         return true;
     }
 
+    function parseRequiredFieldToken(value) {
+        const token = (value || '').toString().trim().toLowerCase();
+        const match = token.match(/^(\d{3})(\*|00|[a-z0-9])$/i);
+        if (!match) return null;
+        return { raw: token, tag: match[1], code: normalizeSubfieldCode(match[2]) };
+    }
+
+    function collectDynamicRequiredFieldTokens() {
+        const tokens = [];
+        const seen = new Set();
+        const addToken = value => {
+            const parsed = parseRequiredFieldToken(value);
+            if (!parsed) return;
+            const key = `${parsed.tag}${parsed.code}`;
+            if (seen.has(key)) return;
+            seen.add(key);
+            tokens.push(key);
+        };
+        const addFromElements = $elements => {
+            ($elements || $()).each(function() {
+                const meta = parseFieldMeta(this);
+                if (!meta) return;
+                addToken(`${meta.tag}${meta.code}`);
+            });
+        };
+
+        $('label .required, label.required').each(function() {
+            const $label = $(this).closest('label');
+            const forId = $label.attr('for');
+            if (forId) {
+                const target = document.getElementById(forId);
+                if (target) addFromElements($(target));
+            }
+            addFromElements($label.find('input, textarea, select'));
+        });
+
+        $('.required').each(function() {
+            const $required = $(this);
+            const $row = $required.closest('li.subfield_line, tr, .subfield_line, .subfield, li, td, th');
+            if ($row.length) addFromElements($row.first().find('input, textarea, select'));
+            addFromElements($required.siblings('input, textarea, select'));
+            addFromElements($required.parent().find('input, textarea, select'));
+        });
+
+        return tokens;
+    }
+
+    function getRequiredFieldTokens(state) {
+        const merged = [];
+        const seen = new Set();
+        const configured = (state && Array.isArray(state.requiredFieldsConfigured))
+            ? state.requiredFieldsConfigured
+            : ((state && Array.isArray(state.requiredFields)) ? state.requiredFields : []);
+        const dynamic = collectDynamicRequiredFieldTokens();
+        const addTokens = source => {
+            (source || []).forEach(item => {
+                const parsed = parseRequiredFieldToken(item);
+                if (!parsed) return;
+                const key = `${parsed.tag}${parsed.code}`;
+                if (seen.has(key)) return;
+                seen.add(key);
+                merged.push(key);
+            });
+        };
+        addTokens(configured);
+        addTokens(dynamic);
+        if (state) state.requiredFields = merged;
+        return merged;
+    }
+
     function anyFieldHasValue(tag, code) {
-        if (!isValidTag(tag) || !isValidSubfieldCode(code)) return false;
-        const selector = `#subfield${tag}${code}, input[id^="tag_${tag}_subfield_${code}"], textarea[id^="tag_${tag}_subfield_${code}"], select[id^="tag_${tag}_subfield_${code}"], #tag_${tag}_subfield_${code}, input[name^="field_${tag}${code}"], textarea[name^="field_${tag}${code}"], select[name^="field_${tag}${code}"]`;
+        const normalizedTag = normalizeTag(tag);
+        const normalizedCode = normalizeSubfieldCode(code);
+        if (!isValidTag(normalizedTag) || !isValidSubfieldCode(normalizedCode)) return false;
+        const selectors = [];
+        subfieldCodeVariants(normalizedCode).forEach(variant => {
+            selectors.push(
+                `#subfield${normalizedTag}${variant}`,
+                `input[id^="tag_${normalizedTag}_subfield_${variant}"]`,
+                `textarea[id^="tag_${normalizedTag}_subfield_${variant}"]`,
+                `select[id^="tag_${normalizedTag}_subfield_${variant}"]`,
+                `#tag_${normalizedTag}_subfield_${variant}`,
+                `input[name^="field_${normalizedTag}${variant}"]`,
+                `textarea[name^="field_${normalizedTag}${variant}"]`,
+                `select[name^="field_${normalizedTag}${variant}"]`
+            );
+        });
+        if (normalizedCode === '0') {
+            selectors.push(
+                `input[id^="field_${normalizedTag}"]`,
+                `textarea[id^="field_${normalizedTag}"]`,
+                `select[id^="field_${normalizedTag}"]`,
+                `input[name^="field_${normalizedTag}"]`,
+                `textarea[name^="field_${normalizedTag}"]`,
+                `select[name^="field_${normalizedTag}"]`
+            );
+        }
+        const selector = selectors.join(', ');
         let found = false;
         $(selector).each(function() {
-            const value = $(this).val();
-            if (value && value.trim()) {
-                found = true;
-                return false;
+            const value = ($(this).val() || '').toString().trim();
+            if (!value) return;
+            if (normalizedCode === '0') {
+                const meta = parseFieldMeta(this);
+                if (meta && meta.tag === normalizedTag && normalizeSubfieldCode(meta.code) !== '0') return;
             }
+            found = true;
+            return false;
         });
         return found;
+    }
+
+    function anyTagHasAnySubfieldValue(tag) {
+        const normalizedTag = normalizeTag(tag);
+        if (!isValidTag(normalizedTag)) return false;
+        const selector = `input[id^="tag_${normalizedTag}_subfield_"], textarea[id^="tag_${normalizedTag}_subfield_"], select[id^="tag_${normalizedTag}_subfield_"], input[id^="subfield${normalizedTag}"], textarea[id^="subfield${normalizedTag}"], select[id^="subfield${normalizedTag}"], input[name^="field_${normalizedTag}"], textarea[name^="field_${normalizedTag}"], select[name^="field_${normalizedTag}"]`;
+        let found = false;
+        $(selector).each(function() {
+            const id = (this.id || '').toLowerCase();
+            const name = (this.name || '').toLowerCase();
+            if (id.includes('indicator') || name.includes('indicator')) return;
+            const value = ($(this).val() || '').toString().trim();
+            if (!value) return;
+            const meta = parseFieldMeta(this);
+            if (meta && meta.tag && meta.tag !== normalizedTag) return;
+            if (!meta && !id.includes(`field_${normalizedTag}`) && !name.includes(`field_${normalizedTag}`)) return;
+            found = true;
+            return false;
+        });
+        return found;
+    }
+
+    function focusTagField(tag) {
+        const normalizedTag = normalizeTag(tag);
+        if (!isValidTag(normalizedTag)) return;
+        const selector = `input[id^="tag_${normalizedTag}_subfield_"], textarea[id^="tag_${normalizedTag}_subfield_"], select[id^="tag_${normalizedTag}_subfield_"], input[id^="subfield${normalizedTag}"], textarea[id^="subfield${normalizedTag}"], select[id^="subfield${normalizedTag}"], input[name^="field_${normalizedTag}"], textarea[name^="field_${normalizedTag}"], select[name^="field_${normalizedTag}"]`;
+        let $field = $();
+        $(selector).each(function() {
+            const id = (this.id || '').toLowerCase();
+            const name = (this.name || '').toLowerCase();
+            if (id.includes('indicator') || name.includes('indicator')) return;
+            const meta = parseFieldMeta(this);
+            if (meta && meta.tag !== normalizedTag) return;
+            $field = $(this);
+            return false;
+        });
+        if (!$field.length) {
+            toast('warning', `Field ${normalizedTag} not found on form.`);
+            return;
+        }
+        const tabId = findFieldTabId($field);
+        if (tabId) {
+            activateTab(tabId);
+        }
+        setTimeout(() => {
+            $('html, body').animate({ scrollTop: $field.offset().top - 120 }, 200);
+            $field.focus();
+            $field.addClass('aacr2-focus-flash');
+            setTimeout(() => $field.removeClass('aacr2-focus-flash'), 1200);
+        }, tabId ? 160 : 0);
     }
 
     function anyTagHasValue(tags, code) {
@@ -173,9 +321,32 @@
     }
 
     function focusField(tag, code, occurrence) {
-        const $field = findFieldElement(tag, code, occurrence);
+        const normalizedTag = normalizeTag(tag);
+        const normalizedCode = normalizeSubfieldCode(code);
+        let $field = findFieldElement(normalizedTag, normalizedCode, occurrence);
         if (!$field.length) {
-            toast('warning', `Field ${tag}$${code} not found on form.`);
+            const selector = 'input[id*="subfield"], textarea[id*="subfield"], select[id*="subfield"], input[name*="subfield"], textarea[name*="subfield"], select[name*="subfield"], input[name^="field_"], textarea[name^="field_"], select[name^="field_"]';
+            const codeVariants = subfieldCodeVariants(normalizedCode);
+            $field = $(selector).filter(function() {
+                const meta = parseFieldMeta(this);
+                if (meta) {
+                    if (normalizeTag(meta.tag) !== normalizedTag) return false;
+                    return codeVariants.includes(normalizeSubfieldCode(meta.code));
+                }
+                const id = (this.id || '').toLowerCase();
+                const name = (this.name || '').toLowerCase();
+                return codeVariants.some(variant => {
+                    const subfieldNeedle = `tag_${normalizedTag}_subfield_${variant}`;
+                    const fieldNeedle = `field_${normalizedTag}${variant}`;
+                    return id.includes(subfieldNeedle)
+                        || name.includes(subfieldNeedle)
+                        || id.includes(fieldNeedle)
+                        || name.includes(fieldNeedle);
+                });
+            }).first();
+        }
+        if (!$field.length) {
+            toast('warning', `Field ${normalizedTag}$${normalizedCode} not found on form.`);
             return;
         }
         const tabId = findFieldTabId($field);

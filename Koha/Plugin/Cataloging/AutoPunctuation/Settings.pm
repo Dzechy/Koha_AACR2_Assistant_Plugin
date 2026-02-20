@@ -44,8 +44,41 @@ sub _normalize_prompt_template {
     return $text;
 }
 
+sub _normalize_required_field_tokens {
+    my ($value) = @_;
+    my $raw = defined $value ? "$value" : '';
+    my @items = split /\s*,\s*/, $raw;
+    my @tokens;
+    my %seen;
+    for my $item (@items) {
+        next unless defined $item;
+        my $token = lc($item);
+        $token =~ s/\s+//g;
+        next unless $token ne '';
+        next unless $token =~ /\A\d{3}(?:00|[a-z0-9]|\*)\z/;
+        $token =~ s/\A(\d{3})00\z/${1}0/;
+        next if $seen{$token}++;
+        push @tokens, $token;
+    }
+    return \@tokens;
+}
+
+sub _merge_required_field_tokens {
+    my ($baseline, $current) = @_;
+    my @merged;
+    my %seen;
+    for my $source ($baseline, $current) {
+        my $tokens = _normalize_required_field_tokens($source);
+        for my $token (@{$tokens}) {
+            next if $seen{$token}++;
+            push @merged, $token;
+        }
+    }
+    return join(',', @merged);
+}
+
 sub _default_ai_max_output_tokens {
-    return 100000;
+    return 10000;
 }
 
 sub _resolve_ai_max_output_tokens {
@@ -89,7 +122,7 @@ sub _default_settings {
         enforce_aacr2_guardrails => 1,
         enable_live_validation => 1,
         block_save_on_error => 0,
-        required_fields => '0030,0080,040c,942c,100a,245a,260c,300a,050a',
+        required_fields => '0030,0080,040*,040c,942c,100a,245a,260c,300a,050a',
         excluded_tags => '',
         strict_coverage_mode => 0,
         enable_local_fields => 0,
@@ -158,12 +191,13 @@ sub _load_settings {
     $parsed = {} unless ref $parsed eq 'HASH';
     my $defaults = $self->_default_settings();
     my $settings = { %{$defaults}, %{$parsed} };
-    my $expanded_required = $defaults->{required_fields} || '0030,0080,040c,942c,100a,245a,260c,300a,050a';
+    my $expanded_required = $defaults->{required_fields} || '0030,0080,040*,040c,942c,100a,245a,260c,300a,050a';
     my $parsed_required = defined $parsed->{required_fields} ? "$parsed->{required_fields}" : '';
     $parsed_required =~ s/\s+//g;
     if ($parsed_required eq '') {
         $settings->{required_fields} = $expanded_required;
     }
+    $settings->{required_fields} = _merge_required_field_tokens($expanded_required, $settings->{required_fields});
     delete $settings->{ai_request_mode};
     my @token_candidates = ($settings->{ai_max_output_tokens});
     my $resolved_max_tokens = _resolve_ai_max_output_tokens($self, @token_candidates);

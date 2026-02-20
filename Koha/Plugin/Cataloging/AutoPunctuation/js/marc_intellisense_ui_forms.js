@@ -11,12 +11,12 @@
     function parseFieldMeta(element) {
         const id = element.id || '';
         const name = element.name || '';
-        let match = id.match(/tag_(\d{3})_subfield_([a-z0-9])(?:_(\d+(?:_\d+)*))?/i);
-        if (!match) match = id.match(/subfield(\d{3})([a-z0-9])/i);
-        if (!match && name) match = name.match(/tag_(\d{3})_subfield_([a-z0-9])(?:_(\d+(?:_\d+)*))?/i);
-        if (!match && name) match = name.match(/field_(\d{3})([a-z0-9])(?:_(\d+(?:_\d+)*))?/i);
+        let match = id.match(/tag_(\d{3})_subfield_(00|[a-z0-9])(?:_(\d+(?:_\d+)*))?/i);
+        if (!match) match = id.match(/subfield(\d{3})(00|[a-z0-9])/i);
+        if (!match && name) match = name.match(/tag_(\d{3})_subfield_(00|[a-z0-9])(?:_(\d+(?:_\d+)*))?/i);
+        if (!match && name) match = name.match(/field_(\d{3})(00|[a-z0-9])(?:_(\d+(?:_\d+)*))?/i);
         if (!match) return null;
-        return { tag: match[1], code: match[2], occurrence: match[3] || '' };
+        return { tag: match[1], code: normalizeSubfieldCode(match[2]), occurrence: match[3] || '' };
     }
 
     function buildFieldKey(meta) {
@@ -47,12 +47,32 @@
         return true;
     }
 
+    function normalizeTag(tag) {
+        const text = (tag || '').toString().trim();
+        if (/^\d{1,3}$/.test(text)) return text.padStart(3, '0');
+        return text;
+    }
+
     function isValidTag(tag) {
-        return /^\d{3}$/.test(tag || '');
+        return /^\d{3}$/.test(normalizeTag(tag));
+    }
+
+    function normalizeSubfieldCode(code) {
+        const text = (code || '').toString().trim().toLowerCase();
+        if (text === '00' || text === '0') return '0';
+        return text;
+    }
+
+    function subfieldCodeVariants(code) {
+        const normalized = normalizeSubfieldCode(code);
+        if (!normalized) return [];
+        if (normalized === '0') return ['0', '00'];
+        return [normalized];
     }
 
     function isValidSubfieldCode(code) {
-        return /^[a-z0-9]$/i.test(code || '');
+        const normalized = normalizeSubfieldCode(code);
+        return /^[a-z0-9]$/i.test(normalized || '');
     }
 
     function isGuideSubfieldCode(code) {
@@ -902,6 +922,25 @@
         return `${finding.message}\n${finding.rationale || ''}\n${example}`.trim();
     }
 
+    function compareRequiredTokensForPanel(a, b) {
+        const left = parseRequiredFieldToken(a) || { tag: '999', code: 'z' };
+        const right = parseRequiredFieldToken(b) || { tag: '999', code: 'z' };
+        const leftTag = Number.parseInt(left.tag || '999', 10);
+        const rightTag = Number.parseInt(right.tag || '999', 10);
+        if (leftTag !== rightTag) return leftTag - rightTag;
+        const rank = code => {
+            const normalized = normalizeSubfieldCode(code);
+            if (normalized === '*') return -1;
+            if (/^\d$/.test(normalized)) return Number.parseInt(normalized, 10);
+            if (/^[a-z]$/i.test(normalized)) return 100 + normalized.charCodeAt(0);
+            return 999;
+        };
+        const leftRank = rank(left.code);
+        const rightRank = rank(right.code);
+        if (leftRank !== rightRank) return leftRank - rightRank;
+        return String(left.code || '').localeCompare(String(right.code || ''));
+    }
+
     function updateSidePanel(state) {
         const $container = $('#aacr2-findings');
         if (!$container.length) return;
@@ -912,7 +951,13 @@
         if (state.guardrailAlerts && state.guardrailAlerts.length) {
             state.guardrailAlerts.forEach(alert => {
                 total++;
-                const hasTarget = alert && alert.tag && alert.subfield;
+                const hasTarget = !!(
+                    alert
+                    && alert.tag
+                    && alert.subfield !== undefined
+                    && alert.subfield !== null
+                    && alert.subfield !== ''
+                );
                 const action = hasTarget
                     ? `<button type="button" class="btn btn-xs aacr2-btn-yellow" data-tag="${alert.tag}" data-sub="${alert.subfield}">Go to field</button>`
                     : '';
@@ -926,22 +971,35 @@
                 if (hasTarget) {
                     item.find('button').on('click', (event) => {
                         const $btn = $(event.currentTarget);
-                        focusField($btn.data('tag'), $btn.data('sub'), '');
+                        const targetTag = $btn.attr('data-tag') || '';
+                        const targetSub = $btn.attr('data-sub') || '';
+                        if (targetSub === '*') {
+                            focusTagField(targetTag);
+                        } else {
+                            focusField(targetTag, targetSub, '');
+                        }
                     });
                 }
                 $container.append(item);
             });
         }
         if (state.missingRequired.length) {
-            state.missingRequired.forEach(code => {
+            const sortedMissingRequired = state.missingRequired.slice().sort(compareRequiredTokensForPanel);
+            sortedMissingRequired.forEach(code => {
+                const parsed = parseRequiredFieldToken(code);
+                if (!parsed) return;
                 total++;
-                const tag = code.slice(0, 3);
-                const sub = code.slice(3);
-                const label = `${tag}$${sub}`;
+                const tag = parsed.tag;
+                const sub = parsed.code;
+                const isFieldLevel = sub === '*';
+                const label = isFieldLevel ? `${tag} (any subfield)` : `${tag}$${sub}`;
+                const message = isFieldLevel
+                    ? 'Required AACR2 field is missing (no subfield value present).'
+                    : 'Required AACR2 field is missing.';
                 const item = $(`
                     <div class="finding warning">
                         <div><strong>${label}</strong> · WARNING</div>
-                        <div class="meta">Required AACR2 field is missing.</div>
+                        <div class="meta">${message}</div>
                         <div class="actions">
                             <button type="button" class="btn btn-xs aacr2-btn-yellow" data-tag="${tag}" data-sub="${sub}">Go to field</button>
                         </div>
@@ -949,7 +1007,13 @@
                 `);
                 item.find('button').on('click', (event) => {
                     const $btn = $(event.currentTarget);
-                    focusField($btn.data('tag'), $btn.data('sub'), '');
+                    const targetTag = $btn.attr('data-tag') || '';
+                    const targetSub = $btn.attr('data-sub') || '';
+                    if (targetSub === '*') {
+                        focusTagField(targetTag);
+                    } else {
+                        focusField(targetTag, targetSub, '');
+                    }
                 });
                 $container.append(item);
             });

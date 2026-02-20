@@ -18,10 +18,19 @@
     }
 
     function updateGuardrails(settings, state) {
-        const missing = state.requiredFields.filter(code => {
-            const tag = code.slice(0, 3);
-            const sub = code.slice(3);
-            return !anyFieldHasValue(tag, sub);
+        const missing = [];
+        const seen = new Set();
+        const requiredTokens = getRequiredFieldTokens(state);
+        requiredTokens.forEach(code => {
+            const parsed = parseRequiredFieldToken(code);
+            if (!parsed) return;
+            const key = `${parsed.tag}${parsed.code}`;
+            if (seen.has(key)) return;
+            seen.add(key);
+            const present = parsed.code === '*'
+                ? anyTagHasAnySubfieldValue(parsed.tag)
+                : anyFieldHasValue(parsed.tag, parsed.code);
+            if (!present) missing.push(key);
         });
         state.missingRequired = missing;
         state.guardrailAlerts = [];

@@ -12,6 +12,7 @@
             aiFindings: [],
             missingRequired: [],
             guardrailAlerts: [],
+            requiredFieldsConfigured: parseList(settings.requiredFields),
             requiredFields: parseList(settings.requiredFields),
             excludedTags: parseList(settings.excludedTags),
             localAllowlist: parseList(settings.localFieldsAllowlist),

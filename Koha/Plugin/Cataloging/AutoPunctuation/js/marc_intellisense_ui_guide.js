@@ -707,24 +707,35 @@
     }
 
     function findFieldElement(tag, code, occurrence) {
-        if (!isValidTag(tag) || !isValidSubfieldCode(code)) return $();
-        const selector = `#subfield${tag}${code}, input[id^="tag_${tag}_subfield_${code}"], textarea[id^="tag_${tag}_subfield_${code}"], select[id^="tag_${tag}_subfield_${code}"], #tag_${tag}_subfield_${code}, input[name^="field_${tag}${code}"], textarea[name^="field_${tag}${code}"], select[name^="field_${tag}${code}"]`;
+        const normalizedTag = normalizeTag(tag);
+        const normalizedCode = normalizeSubfieldCode(code);
+        if (!isValidTag(normalizedTag) || !isValidSubfieldCode(normalizedCode)) return $();
+        const selector = subfieldCodeVariants(normalizedCode).map(variant => {
+            return `#subfield${normalizedTag}${variant}, input[id^="tag_${normalizedTag}_subfield_${variant}"], textarea[id^="tag_${normalizedTag}_subfield_${variant}"], select[id^="tag_${normalizedTag}_subfield_${variant}"], #tag_${normalizedTag}_subfield_${variant}, input[name^="field_${normalizedTag}${variant}"], textarea[name^="field_${normalizedTag}${variant}"], select[name^="field_${normalizedTag}${variant}"]`;
+        }).join(', ');
         const $candidates = $(selector);
         if (occurrence === undefined || occurrence === null || occurrence === '') return $candidates.first();
         const match = $candidates.filter(function() {
             const meta = parseFieldMeta(this);
-            return meta && meta.tag === tag && meta.code === code && isSameOccurrence(meta.occurrence, occurrence);
+            return meta
+                && meta.tag === normalizedTag
+                && normalizeSubfieldCode(meta.code) === normalizedCode
+                && isSameOccurrence(meta.occurrence, occurrence);
         }).first();
         return match.length ? match : $candidates.first();
     }
 
     function collectSubfieldElements(tag, code, occurrence) {
-        if (!isValidTag(tag) || !isValidSubfieldCode(code)) return $();
-        const selector = `#subfield${tag}${code}, input[id^="tag_${tag}_subfield_${code}"], textarea[id^="tag_${tag}_subfield_${code}"], select[id^="tag_${tag}_subfield_${code}"], #tag_${tag}_subfield_${code}, input[name^="field_${tag}${code}"], textarea[name^="field_${tag}${code}"], select[name^="field_${tag}${code}"]`;
+        const normalizedTag = normalizeTag(tag);
+        const normalizedCode = normalizeSubfieldCode(code);
+        if (!isValidTag(normalizedTag) || !isValidSubfieldCode(normalizedCode)) return $();
+        const selector = subfieldCodeVariants(normalizedCode).map(variant => {
+            return `#subfield${normalizedTag}${variant}, input[id^="tag_${normalizedTag}_subfield_${variant}"], textarea[id^="tag_${normalizedTag}_subfield_${variant}"], select[id^="tag_${normalizedTag}_subfield_${variant}"], #tag_${normalizedTag}_subfield_${variant}, input[name^="field_${normalizedTag}${variant}"], textarea[name^="field_${normalizedTag}${variant}"], select[name^="field_${normalizedTag}${variant}"]`;
+        }).join(', ');
         const matches = [];
         $(selector).each(function() {
             const meta = parseFieldMeta(this);
-            if (!meta || meta.tag !== tag || meta.code !== code) return;
+            if (!meta || meta.tag !== normalizedTag || normalizeSubfieldCode(meta.code) !== normalizedCode) return;
             if (!isSameOccurrence(meta.occurrence, occurrence)) return;
             matches.push(this);
         });
@@ -1094,10 +1105,10 @@
 
     function parseLcTarget(target) {
         const value = (target || '').toString().trim();
-        let match = value.match(/^(\d{3})\s*\$\s*([a-z0-9])$/i);
-        if (!match) match = value.match(/^(\d{3})([a-z0-9])$/i);
+        let match = value.match(/^(\d{3})\s*\$\s*(00|[a-z0-9])$/i);
+        if (!match) match = value.match(/^(\d{3})(00|[a-z0-9])$/i);
         if (!match) return null;
-        return { tag: match[1], code: match[2].toLowerCase() };
+        return { tag: match[1], code: normalizeSubfieldCode(match[2]) };
     }
 
     function findCallNumberTarget() {

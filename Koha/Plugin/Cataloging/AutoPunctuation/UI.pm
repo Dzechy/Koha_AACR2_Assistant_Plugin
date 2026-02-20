@@ -98,7 +98,7 @@ sub configure {
         $settings->{enforce_aacr2_guardrails} = $cgi->param('enforce_aacr2_guardrails') ? 1 : 0;
         $settings->{enable_live_validation} = $cgi->param('enable_live_validation') ? 1 : 0;
         $settings->{block_save_on_error} = $cgi->param('block_save_on_error') ? 1 : 0;
-        $settings->{required_fields} = $cgi->param('required_fields') || '0030,0080,040c,942c,100a,245a,260c,300a,050a';
+        $settings->{required_fields} = $cgi->param('required_fields') || '0030,0080,040*,040c,942c,100a,245a,260c,300a,050a';
         $settings->{excluded_tags} = $cgi->param('excluded_tags') || '';
         $settings->{strict_coverage_mode} = $cgi->param('strict_coverage_mode') ? 1 : 0;
         $settings->{enable_local_fields} = $cgi->param('enable_local_fields') ? 1 : 0;
