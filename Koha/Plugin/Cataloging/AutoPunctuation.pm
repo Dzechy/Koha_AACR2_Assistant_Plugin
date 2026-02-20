@@ -70,6 +70,14 @@ sub _default_settings {
     return Koha::Plugin::Cataloging::AutoPunctuation::Settings::_default_settings(@_);
 }
 
+sub _default_ai_max_output_tokens {
+    return Koha::Plugin::Cataloging::AutoPunctuation::Settings::_default_ai_max_output_tokens(@_);
+}
+
+sub _resolve_ai_max_output_tokens {
+    return Koha::Plugin::Cataloging::AutoPunctuation::Settings::_resolve_ai_max_output_tokens(@_);
+}
+
 sub _session_id {
     return Koha::Plugin::Cataloging::AutoPunctuation::Security::_session_id(@_);
 }
@@ -186,14 +194,6 @@ sub _safe_store_data {
     return Koha::Plugin::Cataloging::AutoPunctuation::Settings::_safe_store_data(@_);
 }
 
-sub _load_legacy_guide_progress {
-    return Koha::Plugin::Cataloging::AutoPunctuation::GuideProgress::_load_legacy_guide_progress(@_);
-}
-
-sub _save_legacy_guide_progress {
-    return Koha::Plugin::Cataloging::AutoPunctuation::GuideProgress::_save_legacy_guide_progress(@_);
-}
-
 sub _guide_progress_key {
     return Koha::Plugin::Cataloging::AutoPunctuation::GuideProgress::_guide_progress_key(@_);
 }
@@ -232,10 +232,6 @@ sub _summary_counts_from_payload {
 
 sub _normalize_progress_summary {
     return Koha::Plugin::Cataloging::AutoPunctuation::GuideProgress::_normalize_progress_summary(@_);
-}
-
-sub _maybe_migrate_guide_progress {
-    return Koha::Plugin::Cataloging::AutoPunctuation::GuideProgress::_maybe_migrate_guide_progress(@_);
 }
 
 sub _rules_pack_path {

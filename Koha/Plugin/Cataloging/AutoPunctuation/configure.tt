@@ -870,7 +870,7 @@
                                     </li>
                                     <li>
                                         <label for="ai_max_output_tokens">Max Output Tokens:</label>
-                                        <input type="number" name="ai_max_output_tokens" id="ai_max_output_tokens" value="[% settings.ai_max_output_tokens || settings.ai_max_tokens || 4096 %]" class="form-control" style="width: 120px;"/>
+                                        <input type="number" name="ai_max_output_tokens" id="ai_max_output_tokens" value="[% settings.ai_max_output_tokens %]" class="form-control" style="width: 120px;"/>
                                         <span class="hint">Max output tokens per response.</span>
                                     </li>
                                     <li>
@@ -2075,7 +2075,7 @@
         if (csrfValue && $('#csrf_token').length && !$('#csrf_token').val()) {
             $('#csrf_token').val(csrfValue);
         }
-        checkBrowserReleaseNotification();
+        // Release checks already run server-side; avoid browser cross-origin noise.
         $(window).on('beforeunload pagehide', function() {
             isConfigurePageUnloading = true;
             if (progressFetchController) {

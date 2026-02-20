@@ -9,21 +9,6 @@ use CGI;
 use Digest::SHA qw(sha1_hex);
 use Scalar::Util qw(looks_like_number);
 
-sub _load_legacy_guide_progress {
-    my ($self, $settings) = @_;
-    my $raw = $self->_safe_retrieve_data('guide_progress', $settings, 'legacy guide_progress') || '{}';
-    my $data = {};
-    try {
-        $data = from_json($raw);
-    } catch {
-        $data = {};
-    };
-    return $data;
-}
-sub _save_legacy_guide_progress {
-    my ($self, $data, $settings) = @_;
-    $self->_safe_store_data({ guide_progress => to_json($data || {}) }, $settings, 'legacy guide_progress');
-}
 sub _guide_progress_key {
     my ($self, $user_key) = @_;
     return '' unless defined $user_key && $user_key ne '';
@@ -286,54 +271,6 @@ sub _normalize_progress_summary {
     };
 }
 
-sub _maybe_migrate_guide_progress {
-    my ($self) = @_;
-    my $settings = $self->_load_settings();
-    my $migrated = $self->_safe_retrieve_data('guide_progress_migrated', $settings, 'guide_progress_migrated') || '';
-    my $index = $self->_load_guide_progress_index($settings);
-    return if $migrated || ($index && @{$index});
-
-    my $legacy = $self->_load_legacy_guide_progress($settings);
-    return unless $legacy && ref $legacy eq 'HASH' && %{$legacy};
-
-    my @index;
-    for my $legacy_key (keys %{$legacy}) {
-        my $entry = $legacy->{$legacy_key} || {};
-        my $userid = $entry->{user} || $entry->{userid} || $legacy_key || '';
-        $userid =~ s/^\s+|\s+$//g if $userid;
-        my $patron = $userid ? Koha::Patrons->find({ userid => $userid }) : undef;
-        my $borrowernumber = $patron ? $patron->borrowernumber : undef;
-        my $user_key = $borrowernumber || $userid;
-        next unless $user_key;
-        my $completed = $entry->{completed};
-        $completed = [] unless $completed && ref $completed eq 'ARRAY';
-        my $skipped = $entry->{skipped};
-        $skipped = [] unless $skipped && ref $skipped eq 'ARRAY';
-        my $summary = $entry->{summary};
-        $summary = {} unless $summary && ref $summary eq 'HASH';
-        my $signature = defined $entry->{signature} ? $entry->{signature} : '';
-        my $signature_hash = $signature ne '' ? sha1_hex($signature) : '';
-        my $summary_counts = $self->_summary_counts_from_payload($summary, $completed, $skipped);
-        my $normalized_summary = $self->_normalize_progress_summary($summary, $summary_counts, $completed, $skipped);
-        my $data = {
-            updated_at => $entry->{updated_at} || time,
-            signature_hash => $signature_hash,
-            completed => $completed,
-            skipped => $skipped,
-            summary_counts => $summary_counts,
-            summary => $normalized_summary
-        };
-        $self->_save_guide_progress_entry($user_key, $data, $settings);
-        push @index, $user_key;
-    }
-    if (@index) {
-        my %seen;
-        my @unique = grep { !$seen{$_}++ } @index;
-        $self->_save_guide_progress_index(\@unique, $settings);
-        $self->_safe_store_data({ guide_progress_migrated => time }, $settings, 'guide_progress_migrated');
-        $self->_save_legacy_guide_progress({}, $settings);
-    }
-}
 sub guide_progress_update {
     my ( $self, $args ) = @_;
     return $self->_json_error('405 Method Not Allowed', 'Method not allowed')
@@ -395,12 +332,6 @@ sub guide_progress_update {
             $user_key = $session_id ? "session:$session_id" : '';
         }
         $user_key = 'anonymous' unless $user_key;
-
-        try {
-            $self->_maybe_migrate_guide_progress();
-        } catch {
-            $self->_debug_log($settings, "guide_progress_update migration error: $_");
-        };
 
         my $signature = $payload->{signature};
         $signature = '' unless defined $signature;
@@ -499,12 +430,6 @@ sub guide_progress_list {
             $settings = $self->_default_settings();
         };
         $settings = {} unless $settings && ref $settings eq 'HASH';
-        try {
-            $self->_maybe_migrate_guide_progress();
-        } catch {
-            $self->_debug_log($settings, "guide_progress_list migration error: $_");
-        };
-
         my $progress_map = $self->_load_guide_progress_map($settings);
         $progress_map = {} unless $progress_map && ref $progress_map eq 'HASH';
 

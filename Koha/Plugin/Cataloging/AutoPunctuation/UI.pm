@@ -64,6 +64,9 @@ sub configure {
     my $prompt_defaults = Koha::Plugin::Cataloging::AutoPunctuation::AI::Prompt::_default_ai_prompt_templates();
     my $prompt_max_length = $defaults->{ai_prompt_max_length} || 16384;
     my $settings = { %{$defaults}, %{$stored_settings} };
+    my $initial_max_tokens = $self->_resolve_ai_max_output_tokens($settings->{ai_max_output_tokens});
+    $settings->{ai_max_output_tokens} = $initial_max_tokens;
+    delete $settings->{ai_max_tokens};
     delete $settings->{ai_request_mode};
     my $saved_successfully = 0;
     my @save_errors;
@@ -110,15 +113,13 @@ sub configure {
             $settings->{ai_model} = $selected_model;
         }
         $settings->{ai_timeout} = $cgi->param('ai_timeout') || $settings->{ai_timeout};
-        my $max_output_tokens = $cgi->param('ai_max_output_tokens');
-        if (defined $max_output_tokens && $max_output_tokens ne '') {
-            $settings->{ai_max_output_tokens} = $max_output_tokens;
-        } elsif (defined $cgi->param('ai_max_tokens') && $cgi->param('ai_max_tokens') ne '') {
-            $settings->{ai_max_output_tokens} = $cgi->param('ai_max_tokens');
-        } else {
-            $settings->{ai_max_output_tokens} ||= $settings->{ai_max_tokens};
-        }
-        $settings->{ai_max_tokens} = $settings->{ai_max_output_tokens} || $settings->{ai_max_tokens};
+        my $ai_max_output_tokens_input = scalar $cgi->param('ai_max_output_tokens');
+        my $resolved_max_tokens = $self->_resolve_ai_max_output_tokens(
+            $ai_max_output_tokens_input,
+            $settings->{ai_max_output_tokens}
+        );
+        $settings->{ai_max_output_tokens} = $resolved_max_tokens;
+        delete $settings->{ai_max_tokens};
         $settings->{ai_temperature} = defined $cgi->param('ai_temperature') ? $cgi->param('ai_temperature') : $settings->{ai_temperature};
         my $reasoning_effort = lc($cgi->param('ai_reasoning_effort') || $settings->{ai_reasoning_effort} || 'low');
         $reasoning_effort = 'low' if $reasoning_effort !~ /^(none|low|medium|high)$/;
@@ -472,8 +473,10 @@ sub intranet_js {
             aiPromptVersion => $Koha::Plugin::Cataloging::AutoPunctuation::AI_PROMPT_VERSION,
             aiPromptDefault => defined $settings->{ai_prompt_default} ? $settings->{ai_prompt_default} : '',
             aiPromptCataloging => defined $settings->{ai_prompt_cataloging} ? $settings->{ai_prompt_cataloging} : '',
-            aiTimeout => $settings->{ai_timeout} || 60,
-            aiMaxTokens => $settings->{ai_max_output_tokens} || $settings->{ai_max_tokens} || 4096,
+            aiTimeout => $settings->{ai_timeout} || 600,
+            aiMaxTokens => $self->_resolve_ai_max_output_tokens(
+                $settings->{ai_max_output_tokens}
+            ),
             aiTemperature => defined $settings->{ai_temperature} ? ($settings->{ai_temperature} + 0) : 0,
             aiReasoningEffort => $settings->{ai_reasoning_effort} || 'low',
             aiRetryCount => $settings->{ai_retry_count} || 1,

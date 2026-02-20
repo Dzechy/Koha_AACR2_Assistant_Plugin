@@ -7,6 +7,58 @@ use LWP::UserAgent;
 use HTTP::Request;
 use Time::HiRes qw(time);
 
+sub _model_list_http_error_detail {
+    my ($self, $response) = @_;
+    return 'Unknown transport error.' unless $response;
+    my $status = $response->status_line || ('HTTP ' . ($response->code || 0));
+    my $raw = '';
+    try {
+        $raw = $response->decoded_content || '';
+    } catch {
+        $raw = $response->content || '';
+    };
+    $raw = '' unless defined $raw;
+    $raw =~ s/\s+/ /g;
+    $raw =~ s/^\s+|\s+$//g;
+    my $detail = '';
+    if ($raw ne '') {
+        my $parsed;
+        try {
+            $parsed = from_json($raw);
+        } catch {
+            $parsed = undef;
+        };
+        if ($parsed && ref $parsed eq 'HASH') {
+            $detail = $parsed->{error}{message}
+                || $parsed->{message}
+                || $parsed->{error_description}
+                || '';
+            $detail = $parsed->{error} if !$detail && defined $parsed->{error} && !ref $parsed->{error};
+        }
+        $detail ||= substr($raw, 0, 220);
+    }
+    return $detail ? "$status - $detail" : $status;
+}
+
+sub _openrouter_models_request {
+    my ($self, $ua, $api_key) = @_;
+    my @headers = (
+        'Accept' => 'application/json',
+        'Content-Type' => 'application/json',
+        'HTTP-Referer' => $Koha::Plugin::Cataloging::AutoPunctuation::PLUGIN_REPO_URL,
+        'X-Title' => 'Koha_AACR2_Assistant_Plugin',
+    );
+    if ($api_key) {
+        unshift @headers, ( 'Authorization' => "Bearer $api_key" );
+    }
+    my $request = HTTP::Request->new(
+        'GET',
+        'https://openrouter.ai/api/v1/models',
+        \@headers
+    );
+    return $ua->request($request);
+}
+
 sub _check_for_updates {
     my ($self) = @_;
     my $cache_raw = $self->retrieve_data('update_cache') || '{}';
@@ -94,7 +146,11 @@ sub _fetch_openai_models {
     my ($self, $settings) = @_;
     my $api_key = $self->_decrypt_secret($settings->{llm_api_key});
     return { models => [], warning => 'OpenAI API key not configured. Add a key to fetch the live model list.' } unless $api_key;
-    my $ua = LWP::UserAgent->new(timeout => $settings->{ai_timeout} || 30);
+    my $ua = LWP::UserAgent->new(
+        timeout => $settings->{ai_timeout} || 600,
+        agent => 'Koha_AACR2_Assistant_Plugin/' . $Koha::Plugin::Cataloging::AutoPunctuation::VERSION
+    );
+    $ua->env_proxy;
     my $request = HTTP::Request->new(
         'GET',
         'https://api.openai.com/v1/models',
@@ -105,7 +161,8 @@ sub _fetch_openai_models {
         ]
     );
     my $response = $ua->request($request);
-    return { error => 'OpenAI model list request failed.' } unless $response->is_success;
+    return { error => 'OpenAI model list request failed: ' . _model_list_http_error_detail($self, $response) }
+        unless $response->is_success;
     my $data;
     try {
         $data = from_json($response->decoded_content);
@@ -136,23 +193,38 @@ sub _fetch_openrouter_models {
     }
     return { models => [], warning => 'OpenRouter API key not configured. Add a key to fetch the live model list.' }
         unless $api_key || $allow_public;
-    my $ua = LWP::UserAgent->new(timeout => $settings->{ai_timeout} || 30);
-    my @headers = (
-        'Accept' => 'application/json',
-        'Content-Type' => 'application/json',
-        'HTTP-Referer' => $Koha::Plugin::Cataloging::AutoPunctuation::PLUGIN_REPO_URL,
-        'X-Title' => 'Koha_AACR2_Assistant_Plugin',
+    my $ua = LWP::UserAgent->new(
+        timeout => $settings->{ai_timeout} || 600,
+        agent => 'Koha_AACR2_Assistant_Plugin/' . $Koha::Plugin::Cataloging::AutoPunctuation::VERSION
     );
+    $ua->env_proxy;
+    my $response;
+    my $warning;
+
     if ($api_key) {
-        unshift @headers, ( 'Authorization' => "Bearer $api_key" );
+        my $auth_response = _openrouter_models_request($self, $ua, $api_key);
+        if ($auth_response->is_success) {
+            $response = $auth_response;
+        } else {
+            my $detail = _model_list_http_error_detail($self, $auth_response);
+            $warning = "Authenticated OpenRouter model lookup failed ($detail).";
+        }
     }
-    my $request = HTTP::Request->new(
-        'GET',
-        'https://openrouter.ai/api/v1/models',
-        \@headers
-    );
-    my $response = $ua->request($request);
-    return { error => 'OpenRouter model list request failed.' } unless $response->is_success;
+    if (!$response) {
+        my $public_response = _openrouter_models_request($self, $ua, '');
+        if (!$public_response->is_success) {
+            my $detail = _model_list_http_error_detail($self, $public_response);
+            my $prefix = $warning ? ($warning . ' ') : '';
+            return { error => "OpenRouter model list request failed: ${prefix}${detail}" };
+        }
+        $response = $public_response;
+        if (!$warning && !$api_key) {
+            $warning = 'OpenRouter API key not configured. Listing public models via server request.';
+        } elsif ($warning) {
+            $warning .= ' Showing public model list.';
+        }
+    }
+
     my $data;
     try {
         $data = from_json($response->decoded_content);
@@ -196,7 +268,7 @@ sub _fetch_openrouter_models {
     @models = sort { ($a->{id} || '') cmp ($b->{id} || '') } @models;
     return {
         models => \@models,
-        warning => ($api_key ? undef : 'OpenRouter API key not configured. Listing public models via server request.')
+        warning => $warning
     };
 }
 sub _compare_versions {

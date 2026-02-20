@@ -37,16 +37,22 @@ sub _extract_text_from_message_content {
     return $text;
 }
 
+sub _resolved_ai_max_output_tokens {
+    my ($self, $settings) = @_;
+    return $self->_resolve_ai_max_output_tokens($settings->{ai_max_output_tokens});
+}
+
 sub _call_openai_responses {
     my ($self, $settings, $prompt, $options) = @_;
     my $api_key = $self->_decrypt_secret($settings->{llm_api_key});
     return { error => 'OpenAI API key not configured.' } unless $api_key;
-    my $ua = LWP::UserAgent->new(timeout => $settings->{ai_timeout} || 60);
+    my $ua = LWP::UserAgent->new(timeout => $settings->{ai_timeout} || 600);
     my $model = $self->_selected_model($settings);
     return { error => 'OpenAI model not configured.' } unless $model;
     my $system_prompt = $options && $options->{system_prompt}
         ? $options->{system_prompt}
         : 'You are an AACR2 MARC21 cataloging assistant. Use AACR2/ISBD conventions only. Return plain text only.';
+    my $max_output_tokens = _resolved_ai_max_output_tokens($self, $settings);
     my $payload = {
         model => $model,
         input => [
@@ -63,7 +69,7 @@ sub _call_openai_responses {
                 ]
             }
         ],
-        max_output_tokens => int($settings->{ai_max_output_tokens} || $settings->{ai_max_tokens} || 4096),
+        max_output_tokens => $max_output_tokens,
         temperature => $settings->{ai_temperature} + 0
     };
     my $effort = $self->_normalized_reasoning_effort($settings);
@@ -113,12 +119,13 @@ sub _call_openrouter_responses {
     my ($self, $settings, $prompt, $options) = @_;
     my $api_key = $self->_decrypt_secret($settings->{openrouter_api_key});
     return { error => 'OpenRouter API key not configured.' } unless $api_key;
-    my $ua = LWP::UserAgent->new(timeout => $settings->{ai_timeout} || 60);
+    my $ua = LWP::UserAgent->new(timeout => $settings->{ai_timeout} || 600);
     my $model = $self->_selected_model($settings);
     return { error => 'OpenRouter model not configured.' } unless $model;
     my $system_prompt = $options && $options->{system_prompt}
         ? $options->{system_prompt}
         : 'You are an AACR2 MARC21 cataloging assistant. Use AACR2/ISBD conventions only. Return plain text only.';
+    my $max_output_tokens = _resolved_ai_max_output_tokens($self, $settings);
     my $payload = {
         input => [
             {
@@ -132,7 +139,7 @@ sub _call_openrouter_responses {
                 content => $prompt
             }
         ],
-        max_output_tokens => int($settings->{ai_max_output_tokens} || $settings->{ai_max_tokens} || 4096),
+        max_output_tokens => $max_output_tokens,
         temperature => $settings->{ai_temperature} + 0
     };
     if ($model && $model ne 'default') {
@@ -183,12 +190,13 @@ sub _call_openrouter_chat {
     my ($self, $settings, $prompt, $options) = @_;
     my $api_key = $self->_decrypt_secret($settings->{openrouter_api_key});
     return { error => 'OpenRouter API key not configured.' } unless $api_key;
-    my $ua = LWP::UserAgent->new(timeout => $settings->{ai_timeout} || 60);
+    my $ua = LWP::UserAgent->new(timeout => $settings->{ai_timeout} || 600);
     my $model = $self->_selected_model($settings);
     return { error => 'OpenRouter model not configured.' } unless $model;
     my $system_prompt = $options && $options->{system_prompt}
         ? $options->{system_prompt}
         : 'You are an AACR2 MARC21 cataloging assistant. Use AACR2/ISBD conventions only. Return plain text only.';
+    my $max_output_tokens = _resolved_ai_max_output_tokens($self, $settings);
     my $payload = {
         messages => [
             {
@@ -200,7 +208,7 @@ sub _call_openrouter_chat {
                 content => $prompt
             }
         ],
-        max_tokens => int($settings->{ai_max_output_tokens} || $settings->{ai_max_tokens} || 4096),
+        max_tokens => $max_output_tokens,
         temperature => $settings->{ai_temperature} + 0
     };
     if ($model && $model ne 'default') {

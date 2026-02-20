@@ -604,11 +604,31 @@ sub ai_models {
         };
         $result = {} unless $result && ref $result eq 'HASH';
         if ($result->{error}) {
+            my $cached_models = ($cache->{$provider} && ref $cache->{$provider} eq 'HASH')
+                ? ($cache->{$provider}{models} || [])
+                : [];
+            if ($cached_models && @{$cached_models}) {
+                $response = {
+                    ok => 1,
+                    provider => $provider,
+                    key_present => $key_present,
+                    cached => 1,
+                    fetched_at => ($cache->{$provider}{fetched_at} || 0),
+                    models => $cached_models,
+                    warning => $result->{warning} || $result->{error} || 'Provider model lookup failed. Showing cached model list.'
+                };
+                $status = '200 OK';
+                return;
+            }
+            my $error_message = $result->{error} || 'Model provider request failed.';
+            if ($result->{warning} && index($error_message, $result->{warning}) == -1) {
+                $error_message .= ' ' . $result->{warning};
+            }
             $response = {
                 ok => 0,
                 provider => $provider,
                 key_present => $key_present,
-                error => $result->{error},
+                error => $error_message,
                 models => [],
                 warning => $result->{warning}
             };

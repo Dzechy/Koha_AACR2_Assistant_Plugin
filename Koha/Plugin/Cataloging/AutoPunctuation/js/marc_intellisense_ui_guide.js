@@ -327,7 +327,7 @@
                 return '';
             }
             if (elapsed >= 70) return 'still waiting; provider queue may be congested';
-            if (elapsed >= 50) return 'still waiting; you can cancel and retry';
+            if (elapsed >= 50) return 'still waiting; provider is still processing';
             if (elapsed >= 30) return 'model is still generating output';
             if (elapsed >= 15) return 'provider is still preparing output';
             return '';
@@ -336,7 +336,7 @@
             if (!isWaitingPhase()) return;
             if (!slowInfoShown && elapsed >= 20) {
                 slowInfoShown = true;
-                toast('info', 'AI response is taking longer than usual. You can keep waiting or click Cancel and retry.');
+                toast('info', 'AI response is taking longer than usual. Continuing to wait for provider output.');
             }
             if (!slowWarningShown && elapsed >= 65) {
                 slowWarningShown = true;
