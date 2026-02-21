@@ -562,7 +562,7 @@
         if (existing && existing.length) return existing;
         let $created = ensureSubfieldInput(tag, occurrence, code);
         if ($created && $created.length) return $created;
-        const baseCodes = ['a', 'c', 'h', 'i', 'm', 'b', 'n', 'p', 'q'];
+        const baseCodes = ['a', 'c', 'h', 'i', 'k', 'm', 'b', 'n', 'p', 'q'];
         for (const baseCode of baseCodes) {
             const $base = findFieldElement(tag, baseCode, occurrence);
             if ($base && $base.length && typeof cloneSubfieldRow === 'function') {
@@ -805,7 +805,7 @@
                                 <div class="actions" style="justify-content:flex-start; margin-top:6px;">
                                     <label style="font-weight: normal;">
                                         <input type="checkbox" id="aacr2-ai-apply-942-parts"/>
-                                        Also apply to 942$h (classification), 942$i (cutter/year), and 942$m (prefix)
+                                        Also apply to 942$h (classification), 942$i (cutter/year), and 942$k (prefix)
                                     </label>
                                 </div>
                                 <div id="aacr2-ai-classification-error" class="aacr2-ai-error" style="display:none;"></div>
@@ -1059,7 +1059,7 @@
                 }
                 let mirror942Applied = false;
                 if (apply942PartsEnabled($panel)) {
-                    const occ942 = resolveTagOccurrence('942', ['c', 'a', 'h', 'i', 'm']);
+                    const occ942 = resolveTagOccurrence('942', ['c', 'a', 'h', 'i', 'k', 'm']);
                     const apply942Part = (code, value) => {
                         const $field942 = ensureSubfieldInputFlexible('942', occ942, code);
                         if (!$field942 || !$field942.length) return false;
@@ -1073,7 +1073,7 @@
                     };
                     if (apply942Part('h', rawClassValue)) mirror942Applied = true;
                     if (apply942Part('i', cutterValue)) mirror942Applied = true;
-                    if (apply942Part('m', prefixValue)) mirror942Applied = true;
+                    if (apply942Part('k', prefixValue)) mirror942Applied = true;
                 }
                 storePendingItemCallNumber(info.callNumber || '');
                 const hasCutter = !!info.cutter;
@@ -1086,7 +1086,7 @@
                 }
                 if (apply942PartsEnabled($panel)) {
                     message += mirror942Applied
-                        ? ' Mirrored to 942$h/$i/$m.'
+                        ? ' Mirrored to 942$h/$i/$k.'
                         : ' 942 mirror selected, but no editable 942 field was found.';
                 }
                 toast((hasCutter && hasCutterField) ? 'info' : 'warning', message);
