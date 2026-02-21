@@ -340,7 +340,7 @@ Call-number carryover:
 - Rules/punctuation suggestions for selected field
 - Apply selected/all AI patches
 - Classification input + call number build/apply
-- Optional mapping toggle to also apply call-number parts to `942$h` (classification), `942$i` (cutter/year), and `942$m` (prefix)
+- Optional mapping toggle to also apply call-number parts to `942$h` (classification), `942$i` (cutter/year), and `942$k` (prefix)
 - AI response/debug views
 - Adaptive waiting status during AI calls (elapsed timer + long-wait notifications)
 
