@@ -46,7 +46,7 @@ sub _call_openai_responses {
     my ($self, $settings, $prompt, $options) = @_;
     my $api_key = $self->_decrypt_secret($settings->{llm_api_key});
     return { error => 'OpenAI API key not configured.' } unless $api_key;
-    my $ua = LWP::UserAgent->new(timeout => $settings->{ai_timeout} || 600);
+    my $ua = LWP::UserAgent->new(timeout => $settings->{ai_timeout} || 60);
     my $model = $self->_selected_model($settings);
     return { error => 'OpenAI model not configured.' } unless $model;
     my $system_prompt = $options && $options->{system_prompt}
@@ -119,7 +119,7 @@ sub _call_openrouter_responses {
     my ($self, $settings, $prompt, $options) = @_;
     my $api_key = $self->_decrypt_secret($settings->{openrouter_api_key});
     return { error => 'OpenRouter API key not configured.' } unless $api_key;
-    my $ua = LWP::UserAgent->new(timeout => $settings->{ai_timeout} || 600);
+    my $ua = LWP::UserAgent->new(timeout => $settings->{ai_timeout} || 60);
     my $model = $self->_selected_model($settings);
     return { error => 'OpenRouter model not configured.' } unless $model;
     my $system_prompt = $options && $options->{system_prompt}
@@ -190,7 +190,7 @@ sub _call_openrouter_chat {
     my ($self, $settings, $prompt, $options) = @_;
     my $api_key = $self->_decrypt_secret($settings->{openrouter_api_key});
     return { error => 'OpenRouter API key not configured.' } unless $api_key;
-    my $ua = LWP::UserAgent->new(timeout => $settings->{ai_timeout} || 600);
+    my $ua = LWP::UserAgent->new(timeout => $settings->{ai_timeout} || 60);
     my $model = $self->_selected_model($settings);
     return { error => 'OpenRouter model not configured.' } unless $model;
     my $system_prompt = $options && $options->{system_prompt}

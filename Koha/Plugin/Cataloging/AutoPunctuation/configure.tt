@@ -865,7 +865,7 @@
                                     </li>
                                     <li>
                                         <label for="ai_timeout">Timeout (seconds):</label>
-                                        <input type="number" name="ai_timeout" id="ai_timeout" value="[% settings.ai_timeout || 600 %]" class="form-control" style="width: 120px;"/>
+                                        <input type="number" name="ai_timeout" id="ai_timeout" value="[% settings.ai_timeout || 60 %]" class="form-control" style="width: 120px;"/>
                                         <span class="hint">Request timeout in seconds.</span>
                                     </li>
                                     <li>

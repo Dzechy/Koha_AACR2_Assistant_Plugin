@@ -473,7 +473,7 @@ sub intranet_js {
             aiPromptVersion => $Koha::Plugin::Cataloging::AutoPunctuation::AI_PROMPT_VERSION,
             aiPromptDefault => defined $settings->{ai_prompt_default} ? $settings->{ai_prompt_default} : '',
             aiPromptCataloging => defined $settings->{ai_prompt_cataloging} ? $settings->{ai_prompt_cataloging} : '',
-            aiTimeout => $settings->{ai_timeout} || 600,
+            aiTimeout => $settings->{ai_timeout} || 60,
             aiMaxTokens => $self->_resolve_ai_max_output_tokens(
                 $settings->{ai_max_output_tokens}
             ),

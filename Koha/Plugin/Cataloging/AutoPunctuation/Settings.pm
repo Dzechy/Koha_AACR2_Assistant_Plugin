@@ -134,7 +134,7 @@ sub _default_settings {
         ai_model => '',
         ai_model_openai => '',
         ai_model_openrouter => '',
-        ai_timeout => 600,
+        ai_timeout => 60,
         ai_max_output_tokens => $default_max_output_tokens,
         ai_temperature => 0.1,
         ai_reasoning_effort => 'low',

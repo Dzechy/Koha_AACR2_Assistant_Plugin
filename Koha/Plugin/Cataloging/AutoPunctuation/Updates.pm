@@ -147,7 +147,7 @@ sub _fetch_openai_models {
     my $api_key = $self->_decrypt_secret($settings->{llm_api_key});
     return { models => [], warning => 'OpenAI API key not configured. Add a key to fetch the live model list.' } unless $api_key;
     my $ua = LWP::UserAgent->new(
-        timeout => $settings->{ai_timeout} || 600,
+        timeout => $settings->{ai_timeout} || 60,
         agent => 'Koha_AACR2_Assistant_Plugin/' . $Koha::Plugin::Cataloging::AutoPunctuation::VERSION
     );
     $ua->env_proxy;
@@ -194,7 +194,7 @@ sub _fetch_openrouter_models {
     return { models => [], warning => 'OpenRouter API key not configured. Add a key to fetch the live model list.' }
         unless $api_key || $allow_public;
     my $ua = LWP::UserAgent->new(
-        timeout => $settings->{ai_timeout} || 600,
+        timeout => $settings->{ai_timeout} || 60,
         agent => 'Koha_AACR2_Assistant_Plugin/' . $Koha::Plugin::Cataloging::AutoPunctuation::VERSION
     );
     $ua->env_proxy;
